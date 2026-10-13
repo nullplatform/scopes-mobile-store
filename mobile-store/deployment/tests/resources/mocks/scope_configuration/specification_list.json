@@ -1,0 +1,6 @@
+{
+  "results": [
+    { "id": "spec-static", "slug": "static-files", "name": "Static Files" },
+    { "id": "spec-mobile", "slug": "mobile-store", "name": "Mobile store" }
+  ]
+}
