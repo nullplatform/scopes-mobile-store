@@ -3,9 +3,10 @@
 # temporary credentials so every subsequent step (the aws and firebase calls of
 # the layers) inherits them.
 #
-# Runs FIRST in each AWS-touching workflow, sourced like every step. The
-# workflow YAML declares AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and
-# AWS_SESSION_TOKEN as output:environment so the hand-off is explicit.
+# Runs FIRST in each AWS-touching workflow, sourced like every step in the one
+# bash session of the workflow, so the exports reach the later steps. The
+# workflow YAML lists AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and
+# AWS_SESSION_TOKEN under output: for the reader; the engine ignores output:.
 #
 # The AWS IAM provider (category "identity-access-control") is read from
 # CONTEXT.providers[...], where the platform has ALREADY resolved it for the

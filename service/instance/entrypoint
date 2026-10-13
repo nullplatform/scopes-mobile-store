@@ -40,5 +40,10 @@ export NP_ACTION_CONTEXT SCOPE_ID
 # shellcheck source=service/workflow
 source "$WORKING_DIRECTORY/service/workflow"
 workflow_overrides instance list
-np service workflow exec --no-output --build-context --no-params \
+# Listing releases needs no parameters; older CLIs do not know --no-params.
+no_params=()
+if np service workflow exec --help 2>&1 | grep -q -- "--no-params"; then
+  no_params=(--no-params)
+fi
+np service workflow exec --no-output --build-context ${no_params[@]+"${no_params[@]}"} \
   --workflow "$SERVICE_PATH/instance/workflows/list.yaml" ${WORKFLOW_OVERRIDES[@]+"${WORKFLOW_OVERRIDES[@]}"}

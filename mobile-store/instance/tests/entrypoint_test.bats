@@ -24,6 +24,10 @@ setup() {
 	mkdir -p "$TEST_TMP_DIR/bin"
 	cat > "$TEST_TMP_DIR/bin/np" <<'MOCK'
 #!/bin/bash
+if [ "${*: -1}" = "--help" ]; then
+	echo "${NP_MOCK_HELP-      --no-params           Skip fetching parameters during build context}"
+	exit 0
+fi
 printf '%s\n' "$*" >> "$NP_MOCK_CALLS_LOG"
 printf '%s\n' "$NP_ACTION_CONTEXT" > "$NP_MOCK_CONTEXT_FILE"
 echo "workflow logs go to stderr" >&2
@@ -33,7 +37,7 @@ MOCK
 	export PATH="$TEST_TMP_DIR/bin:$PATH"
 	export NP_MOCK_CALLS_LOG="$TEST_TMP_DIR/np_calls.log"
 	export NP_MOCK_CONTEXT_FILE="$TEST_TMP_DIR/context.json"
-	unset NULLPLATFORM_API_KEY NP_API_KEY
+	unset NULLPLATFORM_API_KEY NP_API_KEY NP_MOCK_HELP
 }
 
 teardown() {
@@ -135,17 +139,17 @@ action_notification() {
 			cat "$NP_MOCK_CALLS_LOG"
 			return 1
 		fi
-		if [ "$action" != "instance:data" ]; then
-			assert_mock_call "$NP_MOCK_CALLS_LOG" "service-action exec --live-output --live-report --script=$PROJECT_ROOT/service/deployment/entrypoint"
-		fi
+		assert_mock_call "$NP_MOCK_CALLS_LOG" "service-action exec --live-output --live-report --script=$PROJECT_ROOT/service/deployment/entrypoint"
 	done
 }
 
-@test "Should refuse a service action that claims to be instance:data with the full block" {
-	export NP_ACTION_CONTEXT
+@test "Should refuse in the instance handler a service action that claims to be instance:data" {
+	# The root entrypoint never sends it here (see above); the handler refuses it too.
+	export NP_ACTION_CONTEXT CONTEXT NOTIFICATION_ACTION="instance:data" WORKING_DIRECTORY="$PROJECT_ROOT" SERVICE_PATH="$SCOPE_DIR"
 	NP_ACTION_CONTEXT=$(action_notification "instance:data" "start-initial")
+	CONTEXT=$(echo "$NP_ACTION_CONTEXT" | jq -c .notification)
 
-	run bash -c '"$0" "$@" 2>&1 >/dev/null' "$ENTRYPOINT" --service-path="$SCOPE_DIR"
+	run bash -c '"$0" 2>&1 >/dev/null' "$PROJECT_ROOT/service/instance/entrypoint"
 
 	assert_equal "$status" "1"
 	assert_line "❌ instance:data must be a telemetry request, got slug='start-initial' deployment='77'"
@@ -176,4 +180,28 @@ action_notification() {
 
 	assert_equal "$status" "0"
 	assert_equal "$(jq -r '.notification.parameters.scope_id' "$NP_MOCK_CONTEXT_FILE")" "7"
+}
+
+@test "Should not pass --no-params to a CLI that does not support it" {
+	export NP_MOCK_HELP="      --build-context   Generate context for the action"
+	export NP_ACTION_CONTEXT
+	NP_ACTION_CONTEXT=$(notification "instance:data" '{"scope_id": ["7"]}')
+
+	run_entrypoint --service-path="$SCOPE_DIR"
+
+	assert_equal "$status" "0"
+	assert_mock_call "$NP_MOCK_CALLS_LOG" "service workflow exec --no-output --build-context --workflow $SCOPE_DIR/instance/workflows/list.yaml"
+}
+
+@test "Should send a service action to its handler even when its action is a telemetry one" {
+	local action
+	for action in "log:read" "metric:list" "metric:cpu"; do
+		rm -f "$NP_MOCK_CALLS_LOG"
+		export NP_ACTION_CONTEXT
+		NP_ACTION_CONTEXT=$(action_notification "$action" "start-initial")
+
+		run_entrypoint --service-path="$SCOPE_DIR"
+
+		assert_mock_call "$NP_MOCK_CALLS_LOG" "service-action exec --live-output --live-report --script=$PROJECT_ROOT/service/deployment/entrypoint"
+	done
 }

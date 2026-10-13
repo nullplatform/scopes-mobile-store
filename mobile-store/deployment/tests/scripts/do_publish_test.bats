@@ -316,3 +316,25 @@ EOF
 	assert_equal "$status" "0"
 	assert_equal "$(jq -r '.rollout_percentage' "$WORKDIR/distribution.json")" "100"
 }
+
+@test "Should remove the distribution credentials when the publish is refused before the layer runs" {
+	export CHANNEL="production"
+	export DISTRIBUTION_LAYER="google-play"
+	export GOOGLE_APPLICATION_CREDENTIALS="$WORKDIR/firebase-sa.json"
+	echo '{}' > "$GOOGLE_APPLICATION_CREDENTIALS"
+
+	run bash "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_file_not_exists "$WORKDIR/firebase-sa.json"
+}
+
+@test "Should not remove a credentials file outside the workdir" {
+	export GOOGLE_APPLICATION_CREDENTIALS="$TEST_TMP_DIR/developer-key.json"
+	echo '{}' > "$GOOGLE_APPLICATION_CREDENTIALS"
+
+	run bash "$SCRIPT"
+
+	assert_equal "$status" "0"
+	assert_file_exists "$TEST_TMP_DIR/developer-key.json"
+}
