@@ -70,6 +70,16 @@ render() {
 	assert_equal "$(render "$SPECS_DIR/notification-channel.json.tpl" | jq -r '.configuration.command.data.cmdline')" "/app/pkg/entrypoint --service-path=/app/pkg/mobile-store"
 }
 
+# Every uiSchema scope (controls and rule conditions) must resolve to a schema property:
+# "#/properties/a/properties/b" -> getpath(["properties","a","properties","b"]).
+assert_ui_scopes_resolve() {
+	local schema="$1" uischema="$2" scope
+	for scope in $(echo "$uischema" | jq -r '[.. | objects | (.scope? // empty), (.condition?.scope? // empty)] | unique[]'); do
+		[ "$scope" = "#" ] && continue
+		assert_true "$(echo "$schema" | jq -r --arg s "$scope" '($s | ltrimstr("#/") | split("/")) as $p | getpath($p) != null')" "uiSchema scope $scope resolves to a schema property"
+	done
+}
+
 @test "Service spec exposes platform, channel and rollout percentage in developer vocabulary" {
 	local schema
 	schema=$(render "$SPECS_DIR/service-spec.json.tpl" | jq .attributes.schema)
@@ -85,8 +95,9 @@ render() {
 	assert_equal "$(echo "$schema" | jq -r .properties.rollout_percentage.maximum)" "100"
 	assert_equal "$(echo "$schema" | jq -r .properties.rollout_percentage.default)" "5"
 	assert_equal "$(echo "$schema" | jq -c .properties.rollout_percentage.editableOn)" '["create","update"]'
-	assert_equal "$(echo "$schema" | jq -r '.uiSchema.elements | map(.scope) | join(",")')" "#/properties/platform,#/properties/channel,#/properties/rollout_percentage"
-	assert_equal "$(echo "$schema" | jq -r '[.properties[] | .title, .description] | map(test("firebase|apple|google|fastlane"; "i")) | any')" "false"
+	assert_equal "$(echo "$schema" | jq -r '.uiSchema.type')" "VerticalLayout"
+	assert_equal "$(echo "$schema" | jq -c '.uiSchema.elements | map(.scope)')" '["#/properties/platform","#/properties/channel","#/properties/rollout_percentage"]'
+	assert_equal "$(echo "$schema" | jq -r '[.properties | .. | (.title?, .description?) | strings] | map(test("firebase|apple|google|fastlane"; "i")) | any')" "false"
 }
 
 @test "Scope configuration declares the layers and the assets bucket for DevOps" {
@@ -96,13 +107,42 @@ render() {
 	assert_equal "$(echo "$cfg" | jq -r .category)" "scope-configurations"
 	assert_true "$(echo "$cfg" | jq -r .allow_dimensions)" "allow_dimensions"
 	assert_equal "$(echo "$cfg" | jq -r '.visible_to[0]')" "organization=1:account=2"
-	assert_equal "$(echo "$cfg" | jq -r '.schema.properties.platform_layer.oneOf | map(.const) | join(",")')" "android,ios"
+	assert_equal "$(echo "$cfg" | jq -r '.schema.properties | has("platform_layer")')" "false"
 	assert_equal "$(echo "$cfg" | jq -r '.schema.properties.signing_layer.oneOf | map(.const) | join(",")')" "prebuilt,keyvault,match"
+	assert_equal "$(echo "$cfg" | jq -r .schema.properties.signing_layer.default)" "prebuilt"
 	assert_equal "$(echo "$cfg" | jq -r '.schema.properties.distribution_layer.oneOf | map(.const) | join(",")')" "firebase,app-store,google-play,foundry-eas,intune"
+	assert_equal "$(echo "$cfg" | jq -r .schema.properties.distribution_layer.default)" "firebase"
 	assert_equal "$(echo "$cfg" | jq -r '.schema.properties.gate_layer.oneOf | map(.const) | join(",")')" "none,store-review"
-	assert_equal "$(echo "$cfg" | jq -c .schema.required)" '["platform_layer","signing_layer","distribution_layer","gate_layer","assets"]'
+	assert_equal "$(echo "$cfg" | jq -r .schema.properties.gate_layer.default)" "none"
+	assert_equal "$(echo "$cfg" | jq -c .schema.required)" '["signing_layer","distribution_layer","gate_layer","assets"]'
 	assert_equal "$(echo "$cfg" | jq -c .schema.properties.assets.required)" '["bucket"]'
 	assert_equal "$(echo "$cfg" | jq -r .schema.properties.assets.properties.region.default)" "us-east-1"
-	assert_equal "$(echo "$cfg" | jq -r '.schema.allOf[] | select(.if.properties.distribution_layer.const == "firebase") | .then.required[0]')" "firebase"
-	assert_equal "$(echo "$cfg" | jq -r '.schema.allOf[] | select(.if.properties.signing_layer.const == "keyvault") | .then.properties.android.required[0]')" "keystore_secret"
+	assert_equal "$(echo "$cfg" | jq -c '.schema.properties | [.firebase, .android, .ios] | map(.type)')" '["object","object","object"]'
+	assert_equal "$(echo "$cfg" | jq -c '.schema.properties.firebase.properties | keys')" '["app_id_android","app_id_ios","credentials_secret","project"]'
+	assert_equal "$(echo "$cfg" | jq -c '.schema.properties.android.properties | keys')" '["keystore_secret","package"]'
+	assert_equal "$(echo "$cfg" | jq -c '.schema.properties.ios.properties | keys')" '["app_store_connect_key_secret","bundle_id"]'
+}
+
+@test "Scope configuration conditionally requires firebase and keystore settings" {
+	local schema
+	schema=$(render "$SPECS_DIR/scope-configuration.json.tpl" | jq .schema)
+	assert_equal "$(echo "$schema" | jq -r '.allOf | length')" "2"
+	assert_equal "$(echo "$schema" | jq -c '.allOf[0].if.required')" '["distribution_layer"]'
+	assert_equal "$(echo "$schema" | jq -c '.allOf[0].if.properties.distribution_layer.const')" '"firebase"'
+	assert_equal "$(echo "$schema" | jq -c '.allOf[0].then.required')" '["firebase"]'
+	assert_equal "$(echo "$schema" | jq -c '.allOf[0].then.properties.firebase.required')" '["project","credentials_secret"]'
+	assert_equal "$(echo "$schema" | jq -c '.allOf[1].if.required')" '["signing_layer"]'
+	assert_equal "$(echo "$schema" | jq -c '.allOf[1].if.properties.signing_layer.const')" '"keyvault"'
+	assert_equal "$(echo "$schema" | jq -c '.allOf[1].then.required')" '["android"]'
+	assert_equal "$(echo "$schema" | jq -c '.allOf[1].then.properties.android.required')" '["keystore_secret"]'
+}
+
+@test "Every uiSchema scope of both specs resolves to an existing schema property" {
+	local schema
+	schema=$(render "$SPECS_DIR/service-spec.json.tpl" | jq .attributes.schema)
+	assert_greater_than "$(echo "$schema" | jq '[.uiSchema | .. | objects | .scope? // empty] | length')" "0" "service spec uiSchema scopes"
+	assert_ui_scopes_resolve "$schema" "$(echo "$schema" | jq .uiSchema)"
+	schema=$(render "$SPECS_DIR/scope-configuration.json.tpl" | jq .schema)
+	assert_greater_than "$(echo "$schema" | jq '[.uiSchema | .. | objects | .scope? // empty] | length')" "0" "scope configuration uiSchema scopes"
+	assert_ui_scopes_resolve "$schema" "$(echo "$schema" | jq .uiSchema)"
 }
