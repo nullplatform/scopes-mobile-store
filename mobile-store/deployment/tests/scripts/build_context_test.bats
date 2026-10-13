@@ -669,3 +669,23 @@ with_context() {
 	assert_line "    • Set assets.region to a region name such as us-east-1"
 	refute_np_called "asset list"
 }
+
+# =============================================================================
+# Review follow-ups
+# =============================================================================
+@test "Should ignore an active deployment that is not finalized when picking the previous one" {
+	# deployment_list.json lists 78 (failed, active, newest) above 70 (finalized, active)
+	run_build_context
+	assert_equal "$PREVIOUS_DEPLOYMENT_ID" "70"
+	assert_equal "$PREVIOUS_RELEASE_SEMVER" "0.9.0"
+}
+
+@test "Should write the configuration synthesized from environment variables back into the context" {
+	export CONTEXT=$(echo "$CONTEXT" | jq 'del(.providers["scope-configurations"])')
+	unset NP_MOCK_PROVIDER_LIST NP_MOCK_PROVIDER_LIST_WITH_DIMENSIONS
+	export NP_MOCK_PROVIDER_LIST="$MOCKS_DIR/scope_configuration/provider_list_empty.json"
+	export SIGNING_LAYER=prebuilt DISTRIBUTION_LAYER=firebase GATE_LAYER=none ASSETS_BUCKET=assets-aws-mobile
+	run_build_context
+	assert_json_equal "$(echo "$CONTEXT" | jq -c '.providers["scope-configurations"]')" \
+		'{"signing_layer":"prebuilt","distribution_layer":"firebase","gate_layer":"none","assets":{"bucket":"assets-aws-mobile","region":"us-east-1"}}'
+}

@@ -264,6 +264,10 @@ if [ -z "$SCOPE_CONFIGURATION" ]; then
 		--arg signing "$SIGNING_LAYER" --arg distribution "$DISTRIBUTION_LAYER" --arg gate "$GATE_LAYER" \
 		--arg bucket "$ASSETS_BUCKET" --arg region "$ASSETS_REGION" \
 		'{signing_layer: $signing, distribution_layer: $distribution, gate_layer: $gate, assets: {bucket: $bucket, region: $region}}')
+	# Keep the context consistent with the exported variables so a layer that
+	# reads .providers["scope-configurations"] directly sees the same values.
+	CONTEXT=$(echo "$CONTEXT" | jq -c --argjson configuration "$SCOPE_CONFIGURATION" \
+		'.providers["scope-configurations"] = $configuration')
 fi
 
 echo "   ✅ signing_layer=$SIGNING_LAYER"

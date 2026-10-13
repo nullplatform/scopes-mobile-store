@@ -59,7 +59,7 @@ case "$*" in
     for arg in "$@"; do
       case "$arg" in
         --*)
-          case "$arg" in
+          case "${arg%%=*}" in
             --scope-id|--application-id|--status-in-scope|--limit|--offset|--all|--max-pages|--include-messages|--format|--query) ;;
             *) echo "{\"error\": \"unknown flag: $arg\"}"; exit 1 ;;
           esac
