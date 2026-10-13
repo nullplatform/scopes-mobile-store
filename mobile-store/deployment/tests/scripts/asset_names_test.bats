@@ -48,10 +48,10 @@ write_scope_read() {
 }
 
 @test "Should swap the platform prefix for the other platform" {
-	run platform_asset_name "android-production" android ios
+	run platform_asset_name "android-internal" android ios
 
 	assert_equal "$status" "0"
-	assert_equal "$output" "ios-production"
+	assert_equal "$output" "ios-internal"
 }
 
 @test "Should use the bare platform when the asset name is the primary platform" {
@@ -61,13 +61,24 @@ write_scope_read() {
 	assert_equal "$output" "ios"
 }
 
+@test "Should swap only a prefix followed by a dash" {
+	run platform_asset_name "android-prod" android ios
+	assert_equal "$output" "ios-prod"
+
+	for name in androidtv-prod android2 androidx; do
+		run platform_asset_name "$name" android ios
+		assert_equal "$status" "1"
+		assert_line "   ❌ Cannot derive the ios asset name from the scope's asset name '$name'"
+	done
+}
+
 @test "Should fail with the convention for both when the other name cannot be derived" {
 	run platform_asset_name "mobile-prod" android ios
 
 	assert_equal "$status" "1"
 	assert_line "   ❌ Cannot derive the ios asset name from the scope's asset name 'mobile-prod'"
 	assert_line "  💡 Possible causes:"
-	assert_line "    • The scope deploys android and ios, and its asset name does not start with 'android' (its first platform)"
+	assert_line "    • The scope deploys android and ios, and its asset name is neither 'android' (its first platform) nor starts with 'android-'"
 	assert_line "  🔧 How to fix:"
 	assert_line "    • For a scope with both platforms, name its asset 'android' or 'android-<suffix>': the ios binary is then 'ios' or 'ios-<suffix>'"
 	assert_line "    • np scope patch --id 7 --body '{\"asset_name\":\"android\"}'"
@@ -77,7 +88,7 @@ write_scope_read() {
 # validate_asset_name <name>
 # =============================================================================
 @test "Should accept asset names made of lowercase letters, digits, dots, underscores and dashes" {
-	for name in android ios-uat android-production app.v2 my_app 9lives; do
+	for name in android ios android-internal app.v2 my_app 9lives; do
 		run validate_asset_name "$name"
 		assert_equal "$status" "0"
 	done
@@ -102,29 +113,29 @@ write_scope_read() {
 @test "Should take the asset name from the scope in the context" {
 	resolve_scope_asset_name android
 
-	assert_equal "$RESOLVED_ASSET_NAME" "android-uat"
+	assert_equal "$RESOLVED_ASSET_NAME" "android"
 	assert_equal "$RESOLVED_ASSET_NAME_SOURCE" "context"
 	refute_np_called "scope read"
 }
 
 @test "Should read the scope when the context carries no asset name" {
 	CONTEXT=$(echo "$CONTEXT" | jq -c 'del(.scope.asset_name)')
-	write_scope_read '{"id": 7, "asset_name": "android-production"}'
+	write_scope_read '{"id": 7, "asset_name": "android-internal"}'
 
 	resolve_scope_asset_name android
 
-	assert_equal "$RESOLVED_ASSET_NAME" "android-production"
+	assert_equal "$RESOLVED_ASSET_NAME" "android-internal"
 	assert_equal "$RESOLVED_ASSET_NAME_SOURCE" "scope"
 	assert_np_called "np scope read --id 7 --format json"
 }
 
 @test "Should treat a null asset name in the context as missing" {
 	CONTEXT=$(echo "$CONTEXT" | jq -c '.scope.asset_name = null')
-	write_scope_read '{"id": 7, "asset_name": "android-production"}'
+	write_scope_read '{"id": 7, "asset_name": "android-internal"}'
 
 	resolve_scope_asset_name android
 
-	assert_equal "$RESOLVED_ASSET_NAME" "android-production"
+	assert_equal "$RESOLVED_ASSET_NAME" "android-internal"
 }
 
 @test "Should default to the primary platform when neither the context nor the scope has an asset name" {
@@ -137,13 +148,41 @@ write_scope_read() {
 	assert_equal "$RESOLVED_ASSET_NAME_SOURCE" "default"
 }
 
-@test "Should default to the primary platform when the scope cannot be read" {
+@test "Should fail, not default, when the scope cannot be read" {
 	CONTEXT=$(echo "$CONTEXT" | jq -c 'del(.scope.asset_name)')
+
+	run resolve_scope_asset_name android
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Could not read scope '7' to resolve its asset name"
+	assert_line "   📋 np scope read answered: {\"error\": \"no mock response configured for: np \"}"
+	assert_line "  💡 Possible causes:"
+	assert_line "    • The agent API key cannot read the scope"
+	assert_line "  🔧 How to fix:"
+	assert_line "    • Check that the agent API key can read it: np scope read --id 7 --format json"
+}
+
+@test "Should fail when the scope read answers something that is not the scope" {
+	CONTEXT=$(echo "$CONTEXT" | jq -c 'del(.scope.asset_name)')
+	for answer in 'not json' '[]' '{"id": 8, "asset_name": null}' '{"results": []}' 'null'; do
+		write_scope_read "$answer"
+
+		run resolve_scope_asset_name android
+
+		assert_equal "$status" "1"
+		assert_line "   ❌ Could not read scope '7' to resolve its asset name"
+	done
+}
+
+@test "Should use the scope id of the context when SCOPE_ID is not set" {
+	unset SCOPE_ID
+	CONTEXT=$(echo "$CONTEXT" | jq -c 'del(.scope.asset_name)')
+	write_scope_read '{"id": 7, "asset_name": "android-internal"}'
 
 	resolve_scope_asset_name android
 
-	assert_equal "$RESOLVED_ASSET_NAME" "android"
-	assert_equal "$RESOLVED_ASSET_NAME_SOURCE" "default"
+	assert_equal "$RESOLVED_ASSET_NAME" "android-internal"
+	assert_np_called "np scope read --id 7 --format json"
 }
 
 @test "Should fail when the scope's asset name is invalid" {

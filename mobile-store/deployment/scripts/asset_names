@@ -8,15 +8,21 @@
 # with that name from the release and passes it as CONTEXT.asset, so:
 #   - the first platform of the scope (PLATFORMS) deploys exactly asset_name;
 #   - the other platform of a 'both' scope swaps the platform prefix:
-#     'android-production' -> 'ios-production', 'android' -> 'ios'. Any other
-#     name cannot be derived and fails.
+#     'android-internal' -> 'ios-internal', 'android' -> 'ios'. Any other
+#     name ('androidtv-prod', 'android2', 'mobile') cannot be derived and fails.
 # A scope without asset_name defaults to its first platform ('android').
+# The recommended name is just the platform: one binary for every environment.
+# Put the environment in the name only when the binary embeds environment
+# configuration at build time (e.g. Volt MX Iris).
 #
 #   validate_asset_name <name> [suggestion]
 #   platform_asset_name <asset name> <primary platform> <platform>
+#   read_scope_asset_name <scope id>
+#       sets SCOPE_ASSET_NAME (empty when the scope has none); fails when the
+#       scope cannot be read or np answers something that is not that scope
 #   resolve_scope_asset_name <primary platform>
 #       sets RESOLVED_ASSET_NAME and RESOLVED_ASSET_NAME_SOURCE
-#       (context | scope | default)
+#       (context | scope | default); fails when the scope cannot be read
 # =============================================================================
 
 ASSET_NAME_PATTERN='^[a-z0-9][a-z0-9._-]*$'
@@ -44,13 +50,13 @@ platform_asset_name() {
 		echo "$asset_name"
 	elif [ "$asset_name" = "$primary" ]; then
 		echo "$platform"
-	elif [[ "$asset_name" == "$primary"* ]]; then
+	elif [[ "$asset_name" == "$primary"-* ]]; then
 		echo "$platform${asset_name#"$primary"}"
 	else
 		{
 			echo "   ❌ Cannot derive the $platform asset name from the scope's asset name '$asset_name'"
 			echo "  💡 Possible causes:"
-			echo "    • The scope deploys $primary and $platform, and its asset name does not start with '$primary' (its first platform)"
+			echo "    • The scope deploys $primary and $platform, and its asset name is neither '$primary' (its first platform) nor starts with '$primary-'"
 			echo "  🔧 How to fix:"
 			echo "    • For a scope with both platforms, name its asset '$primary' or '$primary-<suffix>': the $platform binary is then '$platform' or '$platform-<suffix>'"
 			asset_name_patch_hint "$primary"
@@ -59,10 +65,42 @@ platform_asset_name() {
 	fi
 }
 
+# A read that works but has no asset_name (missing or null) is "the scope has
+# none"; a read that fails, or answers anything but the object of that scope,
+# is an error: guessing the name there could deploy the wrong binary.
+# SCOPE_ASSET_NAME is read by the callers.
+# shellcheck disable=SC2034
+read_scope_asset_name() {
+	local scope_id="$1" scope error_file error
+	SCOPE_ASSET_NAME=""
+
+	error_file=$(mktemp)
+	if [[ "$scope_id" =~ ^[0-9]+$ ]] && scope=$(np scope read --id "$scope_id" --format json 2>"$error_file") &&
+		echo "$scope" | jq -e --arg id "$scope_id" 'type == "object" and (.id | tostring) == $id' >/dev/null 2>&1; then
+		rm -f "$error_file"
+		SCOPE_ASSET_NAME=$(echo "$scope" | jq -r '.asset_name // empty')
+		return 0
+	fi
+	error=$(cat "$error_file" 2>/dev/null; echo "${scope:-}")
+	rm -f "$error_file"
+	{
+		echo "   ❌ Could not read scope '$scope_id' to resolve its asset name"
+		echo "   📋 np scope read answered: $(echo "$error" | tr '\n' ' ' | sed 's/ *$//' | cut -c1-300)"
+		echo "  💡 Possible causes:"
+		echo "    • The nullplatform API is unavailable"
+		echo "    • The agent API key cannot read the scope"
+		echo "    • np answered something that is not scope '$scope_id'"
+		echo "  🔧 How to fix:"
+		echo "    • Check that the agent API key can read it: np scope read --id $scope_id --format json"
+		echo "    • Retry the action once the scope can be read"
+	} >&2
+	return 1
+}
+
 # RESOLVED_ASSET_NAME and RESOLVED_ASSET_NAME_SOURCE are read by the callers.
 # shellcheck disable=SC2034
 resolve_scope_asset_name() {
-	local primary="$1" name="" scope
+	local primary="$1" name="" scope_id
 	RESOLVED_ASSET_NAME=""
 	RESOLVED_ASSET_NAME_SOURCE=""
 
@@ -71,8 +109,10 @@ resolve_scope_asset_name() {
 	fi
 	if [ -n "$name" ]; then
 		RESOLVED_ASSET_NAME_SOURCE="context"
-	elif [ -n "${SCOPE_ID:-}" ] && scope=$(np scope read --id "$SCOPE_ID" --format json 2>/dev/null); then
-		name=$(echo "$scope" | jq -r '.asset_name // empty' 2>/dev/null || true)
+	else
+		scope_id="${SCOPE_ID:-$(echo "${CONTEXT:-null}" | jq -r '.scope.id // empty' 2>/dev/null || true)}"
+		read_scope_asset_name "$scope_id" || return 1
+		name="$SCOPE_ASSET_NAME"
 		[ -n "$name" ] && RESOLVED_ASSET_NAME_SOURCE="scope"
 	fi
 	if [ -z "$name" ]; then

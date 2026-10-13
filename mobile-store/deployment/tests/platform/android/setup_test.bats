@@ -82,10 +82,10 @@ teardown() {
 	assert_equal "$status" "1"
 	assert_line "   ❌ $WORKDIR/android/app.apk is not an Android package: no AndroidManifest.xml inside the archive"
 	assert_line "  💡 Possible causes:"
-	assert_line "    • The CI registered a file that is not an APK as the 'android-uat' asset"
+	assert_line "    • The CI registered a file that is not an APK as the 'android' asset"
 	assert_line "    • The download was truncated"
 	assert_line "  🔧 How to fix:"
-	assert_line "    • Make the CI upload the APK produced by the Android build as the 'android-uat' asset"
+	assert_line "    • Make the CI upload the APK produced by the Android build as the 'android' asset"
 }
 
 @test "Should fail when ASSETS_JSON has no android entry" {

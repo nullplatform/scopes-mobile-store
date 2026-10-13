@@ -17,7 +17,7 @@ setup() {
 	SCRIPT="$DEPLOYMENT_DIR/platform/ios/setup"
 
 	export PLATFORMS="ios"
-	export ASSETS_JSON='{"ios":{"url":"s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.ipa","asset_id":12,"build_id":10,"name":"ios-uat"}}'
+	export ASSETS_JSON='{"ios":{"url":"s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.ipa","asset_id":12,"build_id":10,"name":"ios"}}'
 	export AWS_MOCK_S3_OBJECT="$TEST_TMP_DIR/fixture.ipa"
 	make_fixture_ipa "$AWS_MOCK_S3_OBJECT"
 }
@@ -58,10 +58,10 @@ teardown() {
 	assert_equal "$status" "1"
 	assert_line "   ❌ $WORKDIR/ios/app.ipa is not an iOS package: no Payload/*.app/Info.plist inside the archive"
 	assert_line "  💡 Possible causes:"
-	assert_line "    • The CI registered a file that is not an IPA as the 'ios-uat' asset"
+	assert_line "    • The CI registered a file that is not an IPA as the 'ios' asset"
 	assert_line "    • The download was truncated"
 	assert_line "  🔧 How to fix:"
-	assert_line "    • Make the CI upload the IPA produced by the Xcode archive as the 'ios-uat' asset"
+	assert_line "    • Make the CI upload the IPA produced by the Xcode archive as the 'ios' asset"
 }
 
 @test "Should fail with the full troubleshooting block when the bucket cannot be read" {

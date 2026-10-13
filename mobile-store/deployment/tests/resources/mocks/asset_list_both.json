@@ -3,7 +3,7 @@
     {
       "id": 6,
       "build_id": 10,
-      "name": "android-uat",
+      "name": "android",
       "type": "bundle",
       "url": "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk",
       "platform": "",
@@ -13,7 +13,7 @@
     {
       "id": 12,
       "build_id": 10,
-      "name": "ios-uat",
+      "name": "ios",
       "type": "bundle",
       "url": "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.ipa",
       "platform": "",

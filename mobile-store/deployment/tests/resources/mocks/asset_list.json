@@ -3,7 +3,7 @@
     {
       "id": 6,
       "build_id": 10,
-      "name": "android-uat",
+      "name": "android",
       "type": "bundle",
       "url": "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk",
       "platform": "",
@@ -23,9 +23,9 @@
     {
       "id": 9,
       "build_id": 10,
-      "name": "ios-uat",
+      "name": "ios",
       "type": "docker-image",
-      "url": "registry.example.com/sample/ios-uat:10",
+      "url": "registry.example.com/sample/ios:10",
       "platform": "",
       "metadata": {},
       "nrn": "organization=1:account=2:namespace=3:application=442353687:build=10:asset=9"

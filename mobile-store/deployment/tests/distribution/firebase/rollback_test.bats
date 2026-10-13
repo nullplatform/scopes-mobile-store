@@ -53,7 +53,7 @@ teardown() {
 	assert_equal "$status" "0"
 	assert_line "📝 Rolling back to release 0.9.0 (deployment 70) on Firebase App Distribution"
 	assert_line "   📋 Firebase cannot unpublish release 1.0.0: the previous build is distributed again to group 'internal'"
-	assert_line "   ✅ android: android-uat of release 0.9.0 -> s3://assets-aws-mobile/mobile/442353687/442353600/uat/app-release.apk"
+	assert_line "   ✅ android: android of release 0.9.0 -> s3://assets-aws-mobile/mobile/442353687/442353600/uat/app-release.apk"
 	assert_line "   📡 Downloading s3://assets-aws-mobile/mobile/442353687/442353600/uat/app-release.apk to $WORKDIR/rollback/android/app.apk"
 	assert_line "   ✅ android: using the CI-signed binary $WORKDIR/rollback/android/app.apk"
 	assert_line "   ✅ android: distributed to Firebase group 'internal' (release projects/726762523137/apps/1:726762523137:android:a700b1fa49f91e41eb0e00/releases/0abcdef)"
@@ -91,6 +91,32 @@ teardown() {
 	assert_line "   ✅ android: android-prod of release 0.9.0 -> s3://assets-aws-mobile/mobile/442353687/442353600/prod/app-release.apk"
 }
 
+@test "Should fail without distributing when no asset name is known and the scope cannot be read" {
+	unset ASSET_NAME
+	CONTEXT=$(echo "$CONTEXT" | jq -c 'del(.scope.asset_name)')
+
+	run bash "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Could not read scope '7' to resolve its asset name"
+	assert_line "   📋 np scope read answered: {\"error\": \"no mock response configured for: np \"}"
+	refute_np_called "release list"
+	[ ! -f "$FIREBASE_MOCK_LOG" ]
+}
+
+@test "Should fail without distributing when the scope read answers garbage" {
+	unset ASSET_NAME
+	CONTEXT=$(echo "$CONTEXT" | jq -c 'del(.scope.asset_name)')
+	echo '[]' > "$TEST_TMP_DIR/scope.json"
+	export NP_MOCK_SCOPE_READ="$TEST_TMP_DIR/scope.json"
+
+	run bash "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Could not read scope '7' to resolve its asset name"
+	[ ! -f "$FIREBASE_MOCK_LOG" ]
+}
+
 @test "Should fail before resolving the previous release when the ios asset name cannot be derived" {
 	export PLATFORMS="android ios"
 	export ASSET_NAME="mobile-prod"
@@ -103,18 +129,18 @@ teardown() {
 }
 
 @test "Should fail with the full troubleshooting block when the previous release has no binary for the platform" {
-	jq '.results |= map(select(.name != "android-uat"))' "$MOCKS_DIR/asset_list_previous.json" > "$TEST_TMP_DIR/assets_without_android.json"
+	jq '.results |= map(select(.name != "android"))' "$MOCKS_DIR/asset_list_previous.json" > "$TEST_TMP_DIR/assets_without_android.json"
 	export NP_MOCK_ASSET_LIST="$TEST_TMP_DIR/assets_without_android.json"
 
 	run bash "$SCRIPT"
 
 	assert_equal "$status" "1"
-	assert_line "   ❌ No asset named 'android-uat' of type 'bundle' in release 0.9.0"
+	assert_line "   ❌ No asset named 'android' of type 'bundle' in release 0.9.0"
 	assert_line "  💡 Possible causes:"
-	assert_line "    • The CI of release 0.9.0 did not register an asset named 'android-uat'"
+	assert_line "    • The CI of release 0.9.0 did not register an asset named 'android'"
 	assert_line "    • The scope's asset name changed after release 0.9.0 was built"
 	assert_line "  🔧 How to fix:"
-	assert_line "    • Roll back by deploying another release that carries an 'android-uat' asset"
+	assert_line "    • Roll back by deploying another release that carries an 'android' asset"
 	[ ! -f "$FIREBASE_MOCK_LOG" ]
 }
 

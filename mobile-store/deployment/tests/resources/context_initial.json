@@ -35,7 +35,7 @@
   "asset": {
     "id": 6,
     "build_id": 10,
-    "name": "android-uat",
+    "name": "android",
     "type": "bundle",
     "url": "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk",
     "platform": "",
@@ -151,7 +151,7 @@
   },
   "scope": {
     "application_id": 442353687,
-    "asset_name": "android-uat",
+    "asset_name": "android",
     "capabilities": {
       "platform": "android",
       "channel": "internal",

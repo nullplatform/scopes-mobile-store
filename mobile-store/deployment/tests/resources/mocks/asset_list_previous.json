@@ -3,7 +3,7 @@
     {
       "id": 5,
       "build_id": 442353600,
-      "name": "android-uat",
+      "name": "android",
       "type": "bundle",
       "url": "s3://assets-aws-mobile/mobile/442353687/442353600/uat/app-release.apk",
       "platform": "",
@@ -13,7 +13,7 @@
     {
       "id": 11,
       "build_id": 442353600,
-      "name": "ios-uat",
+      "name": "ios",
       "type": "bundle",
       "url": "s3://assets-aws-mobile/mobile/442353687/442353600/uat/app-release.ipa",
       "platform": "",

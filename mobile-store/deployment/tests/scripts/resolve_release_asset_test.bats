@@ -59,12 +59,12 @@ teardown() {
 	run bash "$SCRIPT" 0.9.0 ios
 
 	assert_equal "$status" "1"
-	assert_line "   ❌ No asset named 'ios-uat' of type 'bundle' in release 0.9.0"
+	assert_line "   ❌ No asset named 'ios' of type 'bundle' in release 0.9.0"
 	assert_line "  💡 Possible causes:"
-	assert_line "    • The CI of release 0.9.0 did not register an asset named 'ios-uat'"
+	assert_line "    • The CI of release 0.9.0 did not register an asset named 'ios'"
 	assert_line "    • The scope's asset name changed after release 0.9.0 was built"
 	assert_line "  🔧 How to fix:"
-	assert_line "    • Roll back by deploying another release that carries an 'ios-uat' asset"
+	assert_line "    • Roll back by deploying another release that carries an 'ios' asset"
 }
 
 # =============================================================================
@@ -80,25 +80,25 @@ write_previous_listing() {
 }
 
 @test "Should pick the asset named by ASSET_NAME, not by the dimension" {
-	export ASSET_NAME="android-production"
+	export ASSET_NAME="android-internal"
 	export DIMENSION="uat"
-	write_previous_listing "android-uat android-production"
+	write_previous_listing "android android-internal"
 
 	run bash "$SCRIPT" 0.9.0 android
 
 	assert_equal "$status" "0"
-	assert_equal "$output" "s3://assets-aws-mobile/mobile/442353687/442353600/android-production/app"
+	assert_equal "$output" "s3://assets-aws-mobile/mobile/442353687/442353600/android-internal/app"
 }
 
 @test "Should swap the platform prefix for the other platform of a both scope" {
 	export PLATFORMS="android ios"
-	export ASSET_NAME="android-production"
-	write_previous_listing "android-production ios-production ios-uat"
+	export ASSET_NAME="android-internal"
+	write_previous_listing "android-internal ios-internal ios"
 
 	run bash "$SCRIPT" 0.9.0 ios
 
 	assert_equal "$status" "0"
-	assert_equal "$output" "s3://assets-aws-mobile/mobile/442353687/442353600/ios-production/app"
+	assert_equal "$output" "s3://assets-aws-mobile/mobile/442353687/442353600/ios-internal/app"
 }
 
 @test "Should use ios when the asset name is android in a both scope" {
@@ -125,24 +125,50 @@ write_previous_listing() {
 
 @test "Should resolve the asset name from the scope in the context when ASSET_NAME is not set" {
 	unset ASSET_NAME
-	CONTEXT=$(echo "$CONTEXT" | jq -c '.scope.asset_name = "android-production"')
-	write_previous_listing "android-production"
+	CONTEXT=$(echo "$CONTEXT" | jq -c '.scope.asset_name = "android-internal"')
+	write_previous_listing "android-internal"
 
 	run bash "$SCRIPT" 0.9.0 android
 
 	assert_equal "$status" "0"
-	assert_equal "$output" "s3://assets-aws-mobile/mobile/442353687/442353600/android-production/app"
+	assert_equal "$output" "s3://assets-aws-mobile/mobile/442353687/442353600/android-internal/app"
 }
 
 @test "Should default to the platform when no asset name is known" {
 	unset ASSET_NAME
 	CONTEXT=$(echo "$CONTEXT" | jq -c 'del(.scope.asset_name)')
-	write_previous_listing "android android-uat"
+	echo '{"id": 7, "asset_name": null}' > "$TEST_TMP_DIR/scope.json"
+	export NP_MOCK_SCOPE_READ="$TEST_TMP_DIR/scope.json"
+	write_previous_listing "android-internal android"
 
 	run bash "$SCRIPT" 0.9.0 android
 
 	assert_equal "$status" "0"
 	assert_equal "$output" "s3://assets-aws-mobile/mobile/442353687/442353600/android/app"
+}
+
+@test "Should fail when no asset name is known and the scope cannot be read" {
+	unset ASSET_NAME
+	CONTEXT=$(echo "$CONTEXT" | jq -c 'del(.scope.asset_name)')
+
+	run bash "$SCRIPT" 0.9.0 android
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Could not read scope '7' to resolve its asset name"
+	assert_line "   📋 np scope read answered: {\"error\": \"no mock response configured for: np \"}"
+	refute_np_called "release list"
+}
+
+@test "Should fail when the scope read answers another scope" {
+	unset ASSET_NAME
+	CONTEXT=$(echo "$CONTEXT" | jq -c 'del(.scope.asset_name)')
+	echo '{"id": 8, "asset_name": "android-prod"}' > "$TEST_TMP_DIR/scope.json"
+	export NP_MOCK_SCOPE_READ="$TEST_TMP_DIR/scope.json"
+
+	run bash "$SCRIPT" 0.9.0 android
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Could not read scope '7' to resolve its asset name"
 }
 
 @test "Should reject an invalid ASSET_NAME" {
