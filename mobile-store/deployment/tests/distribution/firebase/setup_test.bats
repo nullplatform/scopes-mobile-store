@@ -17,7 +17,7 @@ setup() {
 	setup_layer_test "$DEPLOYMENT_DIR"
 	SCRIPT="$DEPLOYMENT_DIR/distribution/firebase/setup"
 
-	SERVICE_ACCOUNT='{"type":"service_account","project_id":"np-mobile-poc","private_key":"-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----\n","client_email":"distributor@np-mobile-poc.iam.gserviceaccount.com","token_uri":"https://oauth2.googleapis.com/token"}'
+	SERVICE_ACCOUNT='{"type":"service_account","project_id":"np-mobile-pc","private_key":"-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----\n","client_email":"distributor@np-mobile-pc.iam.gserviceaccount.com","token_uri":"https://oauth2.googleapis.com/token"}'
 	write_mock_secret "mobile/firebase-sa" "$SERVICE_ACCOUNT"
 }
 
@@ -30,15 +30,15 @@ teardown() {
 
 	assert_equal "$status" "0"
 	assert_line "🔍 Validating Firebase App Distribution configuration..."
-	assert_line "   ✅ firebase_project=np-mobile-poc"
+	assert_line "   ✅ firebase_project=np-mobile-pc"
 	assert_line "   ✅ firebase_app_id_android=1:726762523137:android:a700b1fa49f91e41eb0e00"
 	assert_line "   📡 Reading secret 'mobile/firebase-sa'"
-	assert_line "   ✅ credentials=$WORKDIR/firebase-sa.json (distributor@np-mobile-poc.iam.gserviceaccount.com)"
+	assert_line "   ✅ credentials=$WORKDIR/firebase-sa.json (distributor@np-mobile-pc.iam.gserviceaccount.com)"
 	assert_line "✨ Firebase App Distribution configured"
 	assert_mock_call "$AWS_MOCK_CALLS_LOG" "aws secretsmanager get-secret-value --secret-id mobile/firebase-sa --query SecretString --output text"
 
 	source "$SCRIPT"
-	assert_equal "$FIREBASE_PROJECT" "np-mobile-poc"
+	assert_equal "$FIREBASE_PROJECT" "np-mobile-pc"
 	assert_equal "$FIREBASE_APP_ID_ANDROID" "1:726762523137:android:a700b1fa49f91e41eb0e00"
 	assert_empty "${FIREBASE_APP_ID_IOS:-}" "FIREBASE_APP_ID_IOS"
 	assert_equal "$GOOGLE_APPLICATION_CREDENTIALS" "$WORKDIR/firebase-sa.json"
@@ -79,7 +79,7 @@ teardown() {
 	assert_line "  💡 Possible causes:"
 	assert_line "    • The scope publishes ios binaries but the Firebase section has no app for that platform"
 	assert_line "  🔧 How to fix:"
-	assert_line "    • Register the app in the Firebase project 'np-mobile-poc' and set the missing field(s) in the scope configuration:"
+	assert_line "    • Register the app in the Firebase project 'np-mobile-pc' and set the missing field(s) in the scope configuration:"
 	assert_line "      • firebase.app_id_ios (e.g. 1:1234567890:ios:abcdef)"
 	[ ! -f "$AWS_MOCK_CALLS_LOG" ]
 }
@@ -188,7 +188,7 @@ teardown() {
 
 @test "Should reject a Firebase project id with unexpected characters" {
 	local project
-	for project in "np-mobile-poc --token x" "NP_Mobile" "np-mobile-poc;rm" "np mobile"; do
+	for project in "np-mobile-pc --token x" "NP_Mobile" "np-mobile-pc;rm" "np mobile"; do
 		with_scope_configuration ".firebase.project = \"$project\""
 
 		run source "$SCRIPT"

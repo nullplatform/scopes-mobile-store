@@ -32,7 +32,7 @@
         "distribution_layer": "firebase",
         "gate_layer": "none",
         "firebase": {
-          "project": "np-mobile-poc",
+          "project": "np-mobile-pc",
           "app_id_android": "1:123:android:abc",
           "credentials_secret": "mobile/firebase-sa"
         },

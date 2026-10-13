@@ -57,7 +57,7 @@ base64url_decode() {
 	header=$(base64url_decode "$(echo "$assertion" | cut -d. -f1)")
 	claims=$(base64url_decode "$(echo "$assertion" | cut -d. -f2)")
 	assert_json_equal "$header" '{"alg":"RS256","typ":"JWT"}' "JWT header"
-	assert_equal "$(echo "$claims" | jq -r '.iss')" "distributor@np-mobile-poc.iam.gserviceaccount.com"
+	assert_equal "$(echo "$claims" | jq -r '.iss')" "distributor@np-mobile-pc.iam.gserviceaccount.com"
 	assert_equal "$(echo "$claims" | jq -r '.scope')" "https://www.googleapis.com/auth/cloud-platform"
 	assert_equal "$(echo "$claims" | jq -r '.aud')" "https://oauth2.googleapis.com/token"
 	assert_equal "$(echo "$claims" | jq -r '.exp - .iat')" "3600"
@@ -78,7 +78,7 @@ base64url_decode() {
 	run bash "$SCRIPT"
 
 	assert_equal "$status" "1"
-	assert_line "   ❌ Could not obtain a Google access token for distributor@np-mobile-poc.iam.gserviceaccount.com"
+	assert_line "   ❌ Could not obtain a Google access token for distributor@np-mobile-pc.iam.gserviceaccount.com"
 	assert_line "  💡 Possible causes:"
 	assert_line "    • The service account key was deleted or the service account was disabled"
 	assert_line "    • The worker clock is off by more than a few minutes"
