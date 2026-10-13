@@ -7,6 +7,16 @@
 # workflows need. The script is sourced by the workflow, so the exports stay
 # in the session; the workflow lists them under `output:` for documentation.
 #
+# BUILD_CONTEXT_MODE (step configuration):
+#   deployment  (default) the deployment workflows: deployment id required,
+#               build assets and previous deployment resolved.
+#   scope       the scope and instance workflows: no deployment, release or
+#               asset in the context. Only the scope, its capabilities and the
+#               scope configuration are resolved; ASSETS_JSON is {}, ASSET_URL,
+#               ASSET_BUILD_NUMBER and PREVIOUS_* are empty, and WORKDIR is
+#               $WORKDIR_BASE/<deployment id> when the context still carries
+#               one (switch_traffic, finalize), else $WORKDIR_BASE/scope-<scope id>.
+#
 # Exports:
 #   DIMENSION            .scope.dimensions.environment, "default" when absent
 #   PLATFORMS            "android", "ios" or "android ios" (space separated)
@@ -52,7 +62,22 @@ ctx() {
 	echo "$CONTEXT" | jq -r "$@"
 }
 
-echo "🔍 Building deployment context..."
+BUILD_CONTEXT_MODE="${BUILD_CONTEXT_MODE:-deployment}"
+case "$BUILD_CONTEXT_MODE" in
+	deployment | scope) ;;
+	*)
+		{
+			echo "   ❌ Unknown BUILD_CONTEXT_MODE '$BUILD_CONTEXT_MODE': expected deployment or scope"
+			echo "  💡 Possible causes:"
+			echo "    • The workflow step that runs build_context sets configuration.BUILD_CONTEXT_MODE to an unexpected value"
+			echo "  🔧 How to fix:"
+			echo "    • Set BUILD_CONTEXT_MODE to scope (scope and instance workflows) or leave it unset (deployment workflows)"
+		} >&2
+		exit 1
+		;;
+esac
+
+echo "🔍 Building $BUILD_CONTEXT_MODE context..."
 
 # =============================================================================
 # Identity
@@ -79,7 +104,9 @@ fail_invalid_context_value() {
 	exit 1
 }
 
-[[ "$DEPLOYMENT_ID" =~ ^[0-9]+$ ]] || fail_invalid_context_value "deployment id" "$DEPLOYMENT_ID" "must be an integer"
+if [ "$BUILD_CONTEXT_MODE" = "deployment" ] || [ -n "$DEPLOYMENT_ID" ]; then
+	[[ "$DEPLOYMENT_ID" =~ ^[0-9]+$ ]] || fail_invalid_context_value "deployment id" "$DEPLOYMENT_ID" "must be an integer"
+fi
 [[ "$SCOPE_ID" =~ ^[0-9]+$ ]] || fail_invalid_context_value "scope id" "$SCOPE_ID" "must be an integer"
 if ! [[ "$DIMENSION" =~ ^[a-z0-9-]+$ ]]; then
 	{
@@ -92,7 +119,11 @@ if ! [[ "$DIMENSION" =~ ^[a-z0-9-]+$ ]]; then
 	exit 1
 fi
 
-echo "   📋 Scope: $NAMESPACE_SLUG/$APPLICATION_SLUG/$SCOPE_SLUG (id $SCOPE_ID) | Dimension: $DIMENSION | Deployment: $DEPLOYMENT_ID | Release: $RELEASE_SEMVER"
+if [ "$BUILD_CONTEXT_MODE" = "scope" ] && [ -z "$DEPLOYMENT_ID" ]; then
+	echo "   📋 Scope: $NAMESPACE_SLUG/$APPLICATION_SLUG/$SCOPE_SLUG (id $SCOPE_ID) | Dimension: $DIMENSION"
+else
+	echo "   📋 Scope: $NAMESPACE_SLUG/$APPLICATION_SLUG/$SCOPE_SLUG (id $SCOPE_ID) | Dimension: $DIMENSION | Deployment: $DEPLOYMENT_ID | Release: $RELEASE_SEMVER"
+fi
 
 # =============================================================================
 # Developer capabilities
@@ -275,114 +306,125 @@ echo "   ✅ distribution_layer=$DISTRIBUTION_LAYER"
 echo "   ✅ gate_layer=$GATE_LAYER"
 echo "   ✅ assets_bucket=$ASSETS_BUCKET (region $ASSETS_REGION)"
 
-# =============================================================================
-# Build assets: one binary per platform, named <platform>-<dimension>
-#
-# The context carries the asset the platform matched to the scope's asset_type;
-# its type is the type every binary of this build must have. When its name is
-# not the one this platform/dimension needs, look the right one up in the build.
-# =============================================================================
-ASSET_TYPE=$(ctx '.asset.type // .scope.capabilities.asset_type // "bundle"')
-build_id=$(ctx '.asset.build_id // .release.build_id // empty')
-context_asset=$(ctx -c '.asset // {}')
-
-if [ -z "$build_id" ]; then
-	{
-		echo "   ❌ The release has no build id"
-		echo "  💡 Possible causes:"
-		echo "    • The context carries no asset and the release is not linked to a build"
-		echo "  🔧 How to fix:"
-		echo "    • Create the release from a build whose CI registered the mobile binaries as assets"
-	} >&2
-	exit 1
-fi
-
-echo "📡 Resolving build assets (type $ASSET_TYPE, build $build_id)..."
-
-list_build_assets() {
-	local listing
-	listing=$(np asset list --build-id "$build_id" --format json 2>/dev/null) || return 1
-	echo "$listing" | jq -ec 'if type == "array" then . elif type == "object" and has("results") then .results else error("unexpected asset listing") end' 2>/dev/null
-}
-
-listed_assets=""
-ASSETS_JSON='{}'
-for platform in $PLATFORMS; do
-	expected_name="$platform-$DIMENSION"
-	asset=$(echo "$context_asset" | jq -c --arg name "$expected_name" --arg type "$ASSET_TYPE" \
-		'select(.name == $name and .type == $type) // empty')
-
-	if [ -z "$asset" ]; then
-		if [ -z "$listed_assets" ]; then
-			if ! listed_assets=$(list_build_assets); then
-				echo "   ⚠️ Could not list the assets of build $build_id (np asset list failed)"
-				listed_assets='[]'
-			fi
-		fi
-		asset=$(echo "$listed_assets" | jq -c --arg name "$expected_name" --arg type "$ASSET_TYPE" \
-			'[.[] | select(.name == $name and .type == $type)] | first // empty')
-	fi
-
-	if [ -z "$asset" ]; then
-		{
-			echo "   ❌ No asset named '$expected_name' of type '$ASSET_TYPE' in release $RELEASE_SEMVER"
-			echo "  💡 Possible causes:"
-			echo "    • The CI did not build a binary for the '$DIMENSION' environment"
-			echo "    • The asset was registered with another name"
-			echo "  🔧 How to fix:"
-			echo "    • Make the CI register an asset named '$expected_name' (type $ASSET_TYPE) for this build"
-		} >&2
-		exit 1
-	fi
-
-	# The platform does not persist asset metadata (np asset list shows {}), so
-	# the version is the release semver and the build number the build id.
-	ASSETS_JSON=$(echo "$ASSETS_JSON" | jq -c --arg platform "$platform" --argjson asset "$asset" \
-		'.[$platform] = {url: $asset.url, asset_id: $asset.id, build_id: $asset.build_id}')
-	echo "   ✅ $platform: $expected_name -> $(echo "$asset" | jq -r '.url') (release $RELEASE_SEMVER, build $build_id)"
-done
-
-first_platform="${PLATFORMS%% *}"
-ASSET_URL=$(echo "$ASSETS_JSON" | jq -r --arg platform "$first_platform" '.[$platform].url // empty')
-ASSET_VERSION="$RELEASE_SEMVER"
-ASSET_BUILD_NUMBER="$build_id"
-
 # App identifiers come from the scope configuration, not from the asset.
 ANDROID_PACKAGE=$(echo "$SCOPE_CONFIGURATION" | jq -r '.android.package // empty')
 IOS_BUNDLE_ID=$(echo "$SCOPE_CONFIGURATION" | jq -r '.ios.bundle_id // empty')
 
-# =============================================================================
-# Previous deployment: among the finalized deployments of this scope other
-# than the current one, the one still active in the scope (where a rollback
-# returns to); otherwise the most recent finalized one. Empty when there is
-# none or when the lookup fails (not an error).
-# =============================================================================
-PREVIOUS_DEPLOYMENT_ID=""
-PREVIOUS_RELEASE_SEMVER=""
-previous_deployment=""
-if deployments=$(np deployment list --scope-id "$SCOPE_ID" --all --max-pages 5 --format json 2>/dev/null) &&
-	previous_deployment=$(echo "$deployments" | jq -ec --arg current "$DEPLOYMENT_ID" '
-		(if type == "array" then . elif type == "object" and has("results") then .results else error("unexpected deployment listing") end)
-		| map(select(.status == "finalized" and (.id | tostring) != $current))
-		| (map(select(.status_in_scope == "active")) | first)
-			// (sort_by(.created_at // "", .id) | last)
-			// ""
-	' 2>/dev/null); then
-	:
-else
-	echo "   ⚠️ Could not list the deployments of scope $SCOPE_ID; continuing without a previous deployment"
-	previous_deployment=""
-fi
+ASSET_TYPE=$(ctx '.asset.type // .scope.capabilities.asset_type // "bundle"')
 
-if [ -n "$previous_deployment" ] && [ "$previous_deployment" != '""' ]; then
-	PREVIOUS_DEPLOYMENT_ID=$(echo "$previous_deployment" | jq -r '.id')
-	previous_release_id=$(echo "$previous_deployment" | jq -r '.release_id // empty')
-	if [ -n "$previous_release_id" ]; then
-		PREVIOUS_RELEASE_SEMVER=$(np release read --id "$previous_release_id" --format json 2>/dev/null | jq -r '.semver // empty' 2>/dev/null || true)
-	fi
-	echo "   📋 Previous deployment: $PREVIOUS_DEPLOYMENT_ID (release ${PREVIOUS_RELEASE_SEMVER:-unknown})"
+if [ "$BUILD_CONTEXT_MODE" = "scope" ]; then
+	ASSETS_JSON='{}'
+	ASSET_URL=""
+	ASSET_VERSION="$RELEASE_SEMVER"
+	ASSET_BUILD_NUMBER=""
+	PREVIOUS_DEPLOYMENT_ID=""
+	PREVIOUS_RELEASE_SEMVER=""
+	echo "   📋 Assets and previous deployment: skipped (scope mode)"
 else
-	echo "   📋 Previous deployment: none"
+	# =============================================================================
+	# Build assets: one binary per platform, named <platform>-<dimension>
+	#
+	# The context carries the asset the platform matched to the scope's asset_type;
+	# its type is the type every binary of this build must have. When its name is
+	# not the one this platform/dimension needs, look the right one up in the build.
+	# =============================================================================
+	build_id=$(ctx '.asset.build_id // .release.build_id // empty')
+	context_asset=$(ctx -c '.asset // {}')
+
+	if [ -z "$build_id" ]; then
+		{
+			echo "   ❌ The release has no build id"
+			echo "  💡 Possible causes:"
+			echo "    • The context carries no asset and the release is not linked to a build"
+			echo "  🔧 How to fix:"
+			echo "    • Create the release from a build whose CI registered the mobile binaries as assets"
+		} >&2
+		exit 1
+	fi
+
+	echo "📡 Resolving build assets (type $ASSET_TYPE, build $build_id)..."
+
+	list_build_assets() {
+		local listing
+		listing=$(np asset list --build-id "$build_id" --format json 2>/dev/null) || return 1
+		echo "$listing" | jq -ec 'if type == "array" then . elif type == "object" and has("results") then .results else error("unexpected asset listing") end' 2>/dev/null
+	}
+
+	listed_assets=""
+	ASSETS_JSON='{}'
+	for platform in $PLATFORMS; do
+		expected_name="$platform-$DIMENSION"
+		asset=$(echo "$context_asset" | jq -c --arg name "$expected_name" --arg type "$ASSET_TYPE" \
+			'select(.name == $name and .type == $type) // empty')
+
+		if [ -z "$asset" ]; then
+			if [ -z "$listed_assets" ]; then
+				if ! listed_assets=$(list_build_assets); then
+					echo "   ⚠️ Could not list the assets of build $build_id (np asset list failed)"
+					listed_assets='[]'
+				fi
+			fi
+			asset=$(echo "$listed_assets" | jq -c --arg name "$expected_name" --arg type "$ASSET_TYPE" \
+				'[.[] | select(.name == $name and .type == $type)] | first // empty')
+		fi
+
+		if [ -z "$asset" ]; then
+			{
+				echo "   ❌ No asset named '$expected_name' of type '$ASSET_TYPE' in release $RELEASE_SEMVER"
+				echo "  💡 Possible causes:"
+				echo "    • The CI did not build a binary for the '$DIMENSION' environment"
+				echo "    • The asset was registered with another name"
+				echo "  🔧 How to fix:"
+				echo "    • Make the CI register an asset named '$expected_name' (type $ASSET_TYPE) for this build"
+			} >&2
+			exit 1
+		fi
+
+		# The platform does not persist asset metadata (np asset list shows {}), so
+		# the version is the release semver and the build number the build id.
+		ASSETS_JSON=$(echo "$ASSETS_JSON" | jq -c --arg platform "$platform" --argjson asset "$asset" \
+			'.[$platform] = {url: $asset.url, asset_id: $asset.id, build_id: $asset.build_id}')
+		echo "   ✅ $platform: $expected_name -> $(echo "$asset" | jq -r '.url') (release $RELEASE_SEMVER, build $build_id)"
+	done
+
+	first_platform="${PLATFORMS%% *}"
+	ASSET_URL=$(echo "$ASSETS_JSON" | jq -r --arg platform "$first_platform" '.[$platform].url // empty')
+	ASSET_VERSION="$RELEASE_SEMVER"
+	ASSET_BUILD_NUMBER="$build_id"
+
+	# =============================================================================
+	# Previous deployment: among the finalized deployments of this scope other
+	# than the current one, the one still active in the scope (where a rollback
+	# returns to); otherwise the most recent finalized one. Empty when there is
+	# none or when the lookup fails (not an error).
+	# =============================================================================
+	PREVIOUS_DEPLOYMENT_ID=""
+	PREVIOUS_RELEASE_SEMVER=""
+	previous_deployment=""
+	if deployments=$(np deployment list --scope-id "$SCOPE_ID" --all --max-pages 5 --format json 2>/dev/null) &&
+		previous_deployment=$(echo "$deployments" | jq -ec --arg current "$DEPLOYMENT_ID" '
+			(if type == "array" then . elif type == "object" and has("results") then .results else error("unexpected deployment listing") end)
+			| map(select(.status == "finalized" and (.id | tostring) != $current))
+			| (map(select(.status_in_scope == "active")) | first)
+				// (sort_by(.created_at // "", .id) | last)
+				// ""
+		' 2>/dev/null); then
+		:
+	else
+		echo "   ⚠️ Could not list the deployments of scope $SCOPE_ID; continuing without a previous deployment"
+		previous_deployment=""
+	fi
+
+	if [ -n "$previous_deployment" ] && [ "$previous_deployment" != '""' ]; then
+		PREVIOUS_DEPLOYMENT_ID=$(echo "$previous_deployment" | jq -r '.id')
+		previous_release_id=$(echo "$previous_deployment" | jq -r '.release_id // empty')
+		if [ -n "$previous_release_id" ]; then
+			PREVIOUS_RELEASE_SEMVER=$(np release read --id "$previous_release_id" --format json 2>/dev/null | jq -r '.semver // empty' 2>/dev/null || true)
+		fi
+		echo "   📋 Previous deployment: $PREVIOUS_DEPLOYMENT_ID (release ${PREVIOUS_RELEASE_SEMVER:-unknown})"
+	else
+		echo "   📋 Previous deployment: none"
+	fi
 fi
 
 # =============================================================================
@@ -391,7 +433,7 @@ fi
 # sourcing this script twice in the same session does not nest the path.
 # =============================================================================
 WORKDIR_BASE="${WORKDIR_BASE:-${WORKDIR:-/tmp/mobile-store}}"
-WORKDIR="$WORKDIR_BASE/$DEPLOYMENT_ID"
+WORKDIR="$WORKDIR_BASE/${DEPLOYMENT_ID:-scope-$SCOPE_ID}"
 mkdir -p "$WORKDIR"
 echo "   📋 Workdir: $WORKDIR"
 
@@ -403,4 +445,4 @@ export RELEASE_SEMVER DEPLOYMENT_ID SCOPE_ID APPLICATION_SLUG NAMESPACE_SLUG SCO
 export SIGNING_LAYER DISTRIBUTION_LAYER GATE_LAYER ASSETS_BUCKET ASSETS_REGION SCOPE_CONFIGURATION
 export ASSET_TYPE ASSETS_JSON ASSET_URL ASSET_VERSION ASSET_BUILD_NUMBER ANDROID_PACKAGE IOS_BUNDLE_ID
 export PREVIOUS_DEPLOYMENT_ID PREVIOUS_RELEASE_SEMVER
-export WORKDIR_BASE WORKDIR
+export WORKDIR_BASE WORKDIR BUILD_CONTEXT_MODE

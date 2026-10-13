@@ -1,0 +1,45 @@
+#!/bin/bash
+# =============================================================================
+# delete-deployment
+#
+# Firebase App Distribution cannot unpublish a release (it stays in the
+# console until deleted by hand), so deleting a deployment only removes its
+# scratch directory ($WORKDIR/<deployment id>: binaries, keystore leftovers).
+#
+# Runs for every status the platform deletes from, failed included, and
+# never depends on build_context: a deployment that failed in build_context
+# must still be deletable. It never fails on what it cannot clean.
+#
+# Inputs: DEPLOYMENT_ID (else .deployment.id of CONTEXT), WORKDIR_BASE or
+# WORKDIR (values.yaml). Sourced by the workflow (works executed too).
+# =============================================================================
+
+mobile_store_delete_deployment() {
+	local deployment_id status base workdir
+
+	deployment_id="${DEPLOYMENT_ID:-$(echo "${CONTEXT:-null}" | jq -r '.deployment.id // empty' 2>/dev/null)}"
+	status=$(echo "${CONTEXT:-null}" | jq -r '.deployment.status // "unknown"' 2>/dev/null || echo unknown)
+
+	echo "🔍 Deleting deployment $deployment_id (status $status)"
+	echo "   📋 Firebase App Distribution cannot unpublish a release: the releases of this deployment stay in the console"
+
+	if ! [[ "$deployment_id" =~ ^[0-9]+$ ]]; then
+		echo "   ⚠️ Deployment id '$deployment_id' is not an integer; nothing removed"
+		return 0
+	fi
+
+	base="${WORKDIR_BASE:-${WORKDIR:-/tmp/mobile-store}}"
+	workdir="$base/$deployment_id"
+	if [ -d "$workdir" ]; then
+		if rm -rf "$workdir"; then
+			echo "   ✅ Removed the scratch directory $workdir"
+		else
+			echo "   ⚠️ Could not remove the scratch directory $workdir"
+		fi
+	else
+		echo "   📋 No scratch directory to remove ($workdir)"
+	fi
+	echo "✨ Deployment $deployment_id deleted"
+}
+
+mobile_store_delete_deployment

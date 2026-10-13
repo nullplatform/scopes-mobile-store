@@ -1,0 +1,9 @@
+#!/bin/bash
+# =============================================================================
+# A workflow step for the actions that have nothing to change, such as
+# delete-scope: the scope owns no cloud resource, and the releases it
+# distributed stay in the distribution console. Sourced by the workflow.
+# =============================================================================
+
+echo "📋 Nothing to do for ${SERVICE_ACTION:-this action}: the scope owns no cloud resources (distributed releases stay in the distribution console)"
+echo "✨ Done"

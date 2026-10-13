@@ -1,6 +1,56 @@
+# create-scope: check that the scope configuration resolves and names layer
+# implementations that exist, before any deployment needs them.
 include:
   - "$SERVICE_PATH/values.yaml"
 steps:
-  - name: example
+  - name: assume role
     type: script
-    file: "$SERVICE_PATH/scripts/example"
+    file: "$SERVICE_PATH/utils/assume_role_step"
+    output:
+      - name: AWS_ACCESS_KEY_ID
+        type: environment
+      - name: AWS_SECRET_ACCESS_KEY
+        type: environment
+      - name: AWS_SESSION_TOKEN
+        type: environment
+  - name: build context
+    type: script
+    file: "$SERVICE_PATH/deployment/scripts/build_context"
+    configuration:
+      BUILD_CONTEXT_MODE: scope
+    output:
+      - name: CONTEXT
+        type: environment
+      - name: PLATFORMS
+        type: environment
+      - name: CHANNEL
+        type: environment
+      - name: SIGNING_LAYER
+        type: environment
+      - name: DISTRIBUTION_LAYER
+        type: environment
+      - name: GATE_LAYER
+        type: environment
+      - name: SCOPE_CONFIGURATION
+        type: environment
+  - name: check signing layer
+    type: script
+    file: "$SERVICE_PATH/deployment/scripts/layer_executor"
+    configuration:
+      LAYER_TYPE: signing
+      LAYER_VAR: SIGNING_LAYER
+      LAYER_CHECK: "true"
+  - name: check distribution layer
+    type: script
+    file: "$SERVICE_PATH/deployment/scripts/layer_executor"
+    configuration:
+      LAYER_TYPE: distribution
+      LAYER_VAR: DISTRIBUTION_LAYER
+      LAYER_CHECK: "true"
+  - name: check gate layer
+    type: script
+    file: "$SERVICE_PATH/deployment/scripts/layer_executor"
+    configuration:
+      LAYER_TYPE: gate
+      LAYER_VAR: GATE_LAYER
+      LAYER_CHECK: "true"

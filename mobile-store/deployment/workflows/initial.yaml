@@ -1,6 +1,124 @@
+# start-initial: download, sign, gate and publish the binaries of the release.
+# The engine sources every step in one shell, so exports reach the next steps;
+# each step lists what it exports under output: as the explicit hand-off.
 include:
   - "$SERVICE_PATH/values.yaml"
 steps:
-  - name: example
+  - name: assume role
     type: script
-    file: "$SERVICE_PATH/scripts/example"
+    file: "$SERVICE_PATH/utils/assume_role_step"
+    output:
+      - name: AWS_ACCESS_KEY_ID
+        type: environment
+      - name: AWS_SECRET_ACCESS_KEY
+        type: environment
+      - name: AWS_SESSION_TOKEN
+        type: environment
+  - name: build context
+    type: script
+    file: "$SERVICE_PATH/deployment/scripts/build_context"
+    output:
+      - name: CONTEXT
+        type: environment
+      - name: DIMENSION
+        type: environment
+      - name: PLATFORMS
+        type: environment
+      - name: CHANNEL
+        type: environment
+      - name: ROLLOUT_PERCENTAGE
+        type: environment
+      - name: RELEASE_SEMVER
+        type: environment
+      - name: DEPLOYMENT_ID
+        type: environment
+      - name: SCOPE_ID
+        type: environment
+      - name: APPLICATION_SLUG
+        type: environment
+      - name: NAMESPACE_SLUG
+        type: environment
+      - name: SCOPE_SLUG
+        type: environment
+      - name: SIGNING_LAYER
+        type: environment
+      - name: DISTRIBUTION_LAYER
+        type: environment
+      - name: GATE_LAYER
+        type: environment
+      - name: ASSETS_BUCKET
+        type: environment
+      - name: ASSETS_REGION
+        type: environment
+      - name: SCOPE_CONFIGURATION
+        type: environment
+      - name: ASSET_TYPE
+        type: environment
+      - name: ASSETS_JSON
+        type: environment
+      - name: ASSET_URL
+        type: environment
+      - name: ASSET_VERSION
+        type: environment
+      - name: ASSET_BUILD_NUMBER
+        type: environment
+      - name: ANDROID_PACKAGE
+        type: environment
+      - name: IOS_BUNDLE_ID
+        type: environment
+      - name: PREVIOUS_DEPLOYMENT_ID
+        type: environment
+      - name: PREVIOUS_RELEASE_SEMVER
+        type: environment
+      - name: WORKDIR_BASE
+        type: environment
+      - name: WORKDIR
+        type: environment
+  - name: platform layers
+    type: script
+    file: "$SERVICE_PATH/deployment/scripts/run_platforms"
+    output:
+      - name: BINARY_PATH_ANDROID
+        type: environment
+      - name: BINARY_PATH_IOS
+        type: environment
+  - name: setup signing layer
+    type: script
+    file: "$SERVICE_PATH/deployment/scripts/layer_executor"
+    configuration:
+      LAYER_TYPE: signing
+      LAYER_VAR: SIGNING_LAYER
+    output:
+      - name: SIGNED_BINARY_PATH_ANDROID
+        type: environment
+      - name: SIGNED_BINARY_PATH_IOS
+        type: environment
+  - name: setup distribution layer
+    type: script
+    file: "$SERVICE_PATH/deployment/scripts/layer_executor"
+    configuration:
+      LAYER_TYPE: distribution
+      LAYER_VAR: DISTRIBUTION_LAYER
+    output:
+      - name: FIREBASE_PROJECT
+        type: environment
+      - name: FIREBASE_CREDENTIALS_SECRET
+        type: environment
+      - name: FIREBASE_APP_ID_ANDROID
+        type: environment
+      - name: FIREBASE_APP_ID_IOS
+        type: environment
+      - name: GOOGLE_APPLICATION_CREDENTIALS
+        type: environment
+  - name: setup gate layer
+    type: script
+    file: "$SERVICE_PATH/deployment/scripts/layer_executor"
+    configuration:
+      LAYER_TYPE: gate
+      LAYER_VAR: GATE_LAYER
+    output:
+      - name: GATE_RESULT
+        type: environment
+  - name: publish
+    type: script
+    file: "$SERVICE_PATH/deployment/scripts/do_publish"

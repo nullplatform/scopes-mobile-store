@@ -1,6 +1,7 @@
+# delete-scope: the scope owns no cloud resource; nothing to remove.
 include:
   - "$SERVICE_PATH/values.yaml"
 steps:
-  - name: example
+  - name: delete scope
     type: script
-    file: "$SERVICE_PATH/scripts/example"
+    file: "$SERVICE_PATH/scripts/no_op"
