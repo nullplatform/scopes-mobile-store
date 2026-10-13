@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.0](https://github.com/nullplatform/scopes-mobile-store/compare/v0.1.2...v0.2.0) (2026-10-13)
+
+
+### Features
+
+* **mobile-store:** add build_context and layer executor ([34c9ec4](https://github.com/nullplatform/scopes-mobile-store/commit/34c9ec4e06d18d08fb3345bdb327d2f0a25944f8))
+
+
+### Bug Fixes
+
+* **mobile-store:** address the build_context re-review follow-ups ([a4b8af8](https://github.com/nullplatform/scopes-mobile-store/commit/a4b8af8457df8169cadeba9acdba29c639cee569))
+* **mobile-store:** pick the previous deployment by real status and harden the lookups ([a0e7247](https://github.com/nullplatform/scopes-mobile-store/commit/a0e72473d8cfe05b827f5aab6fe7109492f6660f))
+* **mobile-store:** stop relying on asset metadata for version and package ([36a3cbb](https://github.com/nullplatform/scopes-mobile-store/commit/36a3cbb6fc1e7e5b72c45fd6080d2427b03f7dfd))
+* **mobile-store:** validate layer and context inputs before building paths ([b850c95](https://github.com/nullplatform/scopes-mobile-store/commit/b850c952e4ad84dc69c70f1573def6c2c858d5db))
+
 ## [0.1.2](https://github.com/nullplatform/scopes-mobile-store/compare/v0.1.1...v0.1.2) (2026-10-13)
 
 
