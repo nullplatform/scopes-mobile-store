@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/nullplatform/scopes-mobile-store/compare/v0.4.1...v0.5.0) (2026-10-13)
+
+
+### Features
+
+* **mobile-store:** use the scope's asset name to pick the release binary ([788ce07](https://github.com/nullplatform/scopes-mobile-store/commit/788ce07d366e9f77dfeed829e8ba83bf4042f4ec))
+
+
+### Bug Fixes
+
+* **mobile-store:** fail on unreadable scopes and tighten asset name derivation ([951148e](https://github.com/nullplatform/scopes-mobile-store/commit/951148eecf3e49aae6897e3356874648f670365f))
+
 ## [0.4.1](https://github.com/nullplatform/scopes-mobile-store/compare/v0.4.0...v0.4.1) (2026-10-13)
 
 
