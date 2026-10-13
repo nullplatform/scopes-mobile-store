@@ -30,6 +30,12 @@
       "type": "object",
       "required": ["platform", "channel"],
       "properties": {
+        "asset_type": {
+          "type": "string",
+          "default": "mobile-binary",
+          "export": false,
+          "description": "Asset type this scope deploys: the CI registers mobile binaries with type mobile-binary"
+        },
         "platform": {
           "type": "string",
           "title": "Platform",
