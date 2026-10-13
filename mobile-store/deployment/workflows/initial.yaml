@@ -1,6 +1,14 @@
 # start-initial: download, sign, gate and publish the binaries of the release.
-# The engine sources every step in one shell, so exports reach the next steps;
-# each step lists what it exports under output: as the explicit hand-off.
+#
+# How the engine runs it: np service workflow exec builds ONE `bash -c` that
+# sources every step, joined by &&. So:
+#   - what a step exports reaches the next steps; `output:` is informative
+#     only (the engine ignores it; deployment/tests/workflows checks it);
+#   - the first step whose `source` returns non-zero stops the workflow;
+#   - `set -e` does not apply inside a step chained with && (only inside the
+#     last one), so the scripts check every failure and `return 1`/`exit 1`
+#     explicitly instead of relying on errexit;
+#   - a step's `configuration` applies to that step only.
 include:
   - "$SERVICE_PATH/values.yaml"
 steps:

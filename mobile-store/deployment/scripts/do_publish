@@ -34,6 +34,13 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/validators"
 # shellcheck source=mobile-store/deployment/scripts/deployment_messages
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/deployment_messages"
 
+# If anything fails in this step before the layer's publish deletes them, the
+# credentials the distribution setup wrote must not stay in WORKDIR.
+if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ] && [ "$GOOGLE_APPLICATION_CREDENTIALS" = "${WORKDIR:-}/firebase-sa.json" ]; then
+	MOBILE_STORE_FIREBASE_CREDENTIALS="$GOOGLE_APPLICATION_CREDENTIALS"
+	trap 'rm -f "${MOBILE_STORE_FIREBASE_CREDENTIALS:-}"' EXIT
+fi
+
 layer="${DISTRIBUTION_LAYER:-}"
 if [ -z "$layer" ]; then
 	{

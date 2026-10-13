@@ -3,8 +3,18 @@
 # Refuse to start a blue-green deployment while another one is rolling out
 #
 # Lists the deployments of the scope (same call as build_context) and fails
-# when a deployment other than the current one is still in progress: status
-# creating, running or waiting_for_instances, or status_in_scope candidate.
+# when a deployment other than the current one is still in progress:
+#   - its status is an in-progress one: creating, creating_approval, running,
+#     waiting_for_instances, switching_traffic, finalizing, rolling_back,
+#     cancelling;
+#   - or it is the candidate of the scope (status_in_scope candidate) with a
+#     status that is not terminal. failed, cancelled/canceled, rolled_back,
+#     finalized, deleted, deleting and creating_approval_denied never block,
+#     even when the platform left them as candidate.
+# Statuses seen in the platform (Customer Lake, all deployments): cancelled,
+# creating, creating_approval, creating_approval_denied, deleted, deleting,
+# failed, finalized, finalizing, rolled_back, running, waiting_for_instances;
+# the rest come from the action status table of the scope workflows.
 # Two overlapping rollouts would distribute two releases to the same group and
 # leave no clear deployment to finalize or roll back.
 #
@@ -39,7 +49,11 @@ mobile_store_check_active_rollout() {
 		! in_progress=$(echo "$listing" | jq -er --arg current "$deployment_id" '
 			(if type == "array" then . elif type == "object" and has("results") then .results else error("unexpected deployment listing") end)
 			| map(select((.id | tostring) != $current
-				and ((.status | IN("creating", "running", "waiting_for_instances")) or .status_in_scope == "candidate")))
+				and ((.status | IN("creating", "creating_approval", "running", "waiting_for_instances",
+						"switching_traffic", "finalizing", "rolling_back", "cancelling"))
+					or (.status_in_scope == "candidate"
+						and (.status | IN("failed", "cancelled", "canceled", "rolled_back", "finalized",
+							"deleted", "deleting", "creating_approval_denied") | not)))))
 			| sort_by(.created_at // "", .id)
 			| last
 			| if . == null then "" else (.id | tostring) end

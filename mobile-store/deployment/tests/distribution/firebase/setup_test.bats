@@ -238,3 +238,10 @@ teardown() {
 	assert_line "    • Point WORKDIR in values.yaml to a directory the worker user owns"
 	assert_file_not_exists "$WORKDIR/firebase-sa.json"
 }
+
+@test "Should remove the service account when the workflow shell ends after a later step fails" {
+	run bash -c 'source "$0" >/dev/null 2>&1 && [ -f "$WORKDIR/firebase-sa.json" ] && false' "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_file_not_exists "$WORKDIR/firebase-sa.json"
+}

@@ -75,12 +75,35 @@ assert_rollout_refused() {
 	assert_rollout_refused 79
 }
 
-@test "Should refuse while another deployment is the candidate of the scope" {
-	deployment_list_with 79 finalizing candidate
+@test "Should refuse while another deployment is in any in-progress status" {
+	local deployment_status
+	for deployment_status in creating creating_approval running waiting_for_instances switching_traffic finalizing rolling_back cancelling; do
+		deployment_list_with 79 "$deployment_status" inactive
+
+		run source "$SCRIPT"
+
+		assert_rollout_refused 79
+	done
+}
+
+@test "Should refuse while another deployment is the candidate of the scope with a non-terminal status" {
+	deployment_list_with 79 some_new_status candidate
 
 	run source "$SCRIPT"
 
 	assert_rollout_refused 79
+}
+
+@test "Should not block on a terminal deployment left as the candidate of the scope" {
+	local deployment_status
+	for deployment_status in failed cancelled canceled rolled_back finalized deleted deleting creating_approval_denied; do
+		deployment_list_with 79 "$deployment_status" candidate
+
+		run source "$SCRIPT"
+
+		assert_equal "$status" "0"
+		assert_line "   ✅ No other rollout in progress in scope 7"
+	done
 }
 
 @test "Should pass when the scope has no deployments" {

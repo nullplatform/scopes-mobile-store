@@ -195,3 +195,24 @@ for path in ("deployment/workflows/rollback.yaml", "instance/workflows/list.yaml
 	assert_equal "$output" "deployment/workflows/rollback.yaml rollback all
 instance/workflows/list.yaml scope distribution"
 }
+
+@test "Should refuse an action slug that is not a plain name before building the workflow path" {
+	mkdir -p "$TEST_TMP_DIR/bin"
+	printf '#!/bin/bash\necho "np $*" >> "%s/np_calls.log"\n' "$TEST_TMP_DIR" > "$TEST_TMP_DIR/bin/np"
+	chmod +x "$TEST_TMP_DIR/bin/np"
+	export PATH="$TEST_TMP_DIR/bin:$PATH"
+	export WORKING_DIRECTORY="$PROJECT_ROOT" SERVICE_PATH="$SCOPE_DIR" OVERRIDES_PATH="" SCOPE_ID=7 DEPLOYMENT_ID=""
+
+	SERVICE_ACTION="../../instance/workflows/list" SERVICE_ACTION_TYPE="custom" \
+		run bash "$PROJECT_ROOT/service/scope/entrypoint"
+
+	assert_equal "$status" "1"
+	assert_line "Invalid scope action '../../instance/workflows/list' (slug=../../instance/workflows/list type=custom): only lowercase letters, digits, dashes and underscores are allowed"
+	[ ! -f "$TEST_TMP_DIR/np_calls.log" ]
+
+	DEPLOYMENT_ID=77 SERVICE_ACTION="../../instance/workflows/list" SERVICE_ACTION_TYPE="custom" \
+		run bash "$PROJECT_ROOT/service/deployment/entrypoint"
+
+	assert_equal "$status" "1"
+	[ ! -f "$TEST_TMP_DIR/np_calls.log" ]
+}

@@ -162,6 +162,11 @@ if ! chmod 700 "$WORKDIR"; then
 	return 1
 fi
 (umask 077 && printf '%s\n' "$firebase_service_account" > "$GOOGLE_APPLICATION_CREDENTIALS")
+# The workflow shell ends right after a failing step (steps are chained with
+# &&): remove the service account then too, e.g. when the gate refuses before
+# publish runs. publish, rollback and list_releases also remove it when they end.
+MOBILE_STORE_FIREBASE_CREDENTIALS="$GOOGLE_APPLICATION_CREDENTIALS"
+trap 'rm -f "${MOBILE_STORE_FIREBASE_CREDENTIALS:-}"' EXIT
 echo "   ✅ credentials=$GOOGLE_APPLICATION_CREDENTIALS ($firebase_client_email)"
 
 export FIREBASE_PROJECT FIREBASE_CREDENTIALS_SECRET FIREBASE_APP_ID_ANDROID FIREBASE_APP_ID_IOS GOOGLE_APPLICATION_CREDENTIALS
