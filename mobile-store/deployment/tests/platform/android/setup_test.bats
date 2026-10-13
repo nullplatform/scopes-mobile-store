@@ -37,14 +37,14 @@ teardown() {
 }
 
 @test "Should download the android asset with curl when the url is https" {
-	export ASSETS_JSON='{"android":{"url":"https://downloads.example.com/builds/10/app-release.apk","asset_id":6,"build_id":10}}'
+	export ASSETS_JSON='{"android":{"url":"https://assets-aws-mobile.s3.us-east-1.amazonaws.com/mobile/442353687/10/uat/app-release.apk","asset_id":6,"build_id":10}}'
 	export CURL_MOCK_RESPONSE="$AWS_MOCK_S3_OBJECT"
 
 	run source "$SCRIPT"
 
 	assert_equal "$status" "0"
 	assert_line "   ✅ BINARY_PATH_ANDROID=$WORKDIR/android/app.apk"
-	assert_mock_call "$CURL_MOCK_CALLS_LOG" "curl -fsSL -o $WORKDIR/android/app.apk https://downloads.example.com/builds/10/app-release.apk"
+	assert_mock_call "$CURL_MOCK_CALLS_LOG" "curl -fsSL -o $WORKDIR/android/app.apk https://assets-aws-mobile.s3.us-east-1.amazonaws.com/mobile/442353687/10/uat/app-release.apk"
 	refute_line "aws s3 cp"
 }
 
@@ -108,4 +108,46 @@ teardown() {
 
 	assert_equal "$status" "1"
 	assert_line "   ❌ Unsupported asset url 'ftp://host/app.apk': only s3:// and https:// are supported"
+}
+
+# =============================================================================
+# Hardening: the asset must live in the configured assets bucket
+# =============================================================================
+@test "Should reject an s3 url of another bucket" {
+	export ASSETS_JSON='{"android":{"url":"s3://someone-elses-bucket/app.apk","asset_id":6,"build_id":10}}'
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Asset URL is outside the configured assets bucket 'assets-aws-mobile': s3://someone-elses-bucket/app.apk"
+	assert_line "  💡 Possible causes:"
+	assert_line "    • The CI uploaded the asset to a bucket other than assets.bucket of the 'Mobile store' scope configuration"
+	assert_line "    • The asset url was tampered with"
+	assert_line "  🔧 How to fix:"
+	assert_line "    • Make the CI upload the binaries to s3://assets-aws-mobile and register that url, or set assets.bucket to the bucket the CI uses"
+	[ ! -f "$AWS_MOCK_CALLS_LOG" ]
+}
+
+@test "Should reject an https url of a host other than the assets bucket" {
+	export CURL_MOCK_RESPONSE="$AWS_MOCK_S3_OBJECT"
+	local url
+	for url in "https://evil.example.com/app.apk" "https://assets-aws-mobile.s3.us-east-1.amazonaws.com.evil.example.com/app.apk" "https://evil.example.com/assets-aws-mobile.s3.amazonaws.com/app.apk" "https://other-bucket.s3.amazonaws.com/app.apk"; do
+		export ASSETS_JSON="{\"android\":{\"url\":\"$url\",\"asset_id\":6,\"build_id\":10}}"
+
+		run source "$SCRIPT"
+
+		assert_equal "$status" "1"
+		assert_line "   ❌ Asset URL is outside the configured assets bucket 'assets-aws-mobile': $url"
+		[ ! -f "$CURL_MOCK_CALLS_LOG" ]
+	done
+}
+
+@test "Should accept the virtual-hosted https url of the assets bucket without a region" {
+	export ASSETS_JSON='{"android":{"url":"https://assets-aws-mobile.s3.amazonaws.com/mobile/442353687/10/uat/app-release.apk","asset_id":6,"build_id":10}}'
+	export CURL_MOCK_RESPONSE="$AWS_MOCK_S3_OBJECT"
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "0"
+	assert_line "   ✅ BINARY_PATH_ANDROID=$WORKDIR/android/app.apk"
 }

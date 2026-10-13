@@ -13,6 +13,9 @@
 # Inputs: PLATFORMS, ASSETS_JSON, ASSETS_REGION, DIMENSION, WORKDIR.
 # =============================================================================
 
+# shellcheck source=mobile-store/deployment/scripts/validators
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/validators"
+
 prepare_platform_binary() {
 	local platform="$1" extension="$2" description="$3" entry_regex="$4" ci_hint="$5"
 	local scripts_dir url bucket destination extension_upper
@@ -54,6 +57,7 @@ prepare_platform_binary() {
 			return 1
 			;;
 	esac
+	validate_asset_url "$url" || return 1
 
 	destination="$WORKDIR/$platform/app.$extension"
 	echo "   📡 Downloading $url to $destination"

@@ -1,7 +1,7 @@
 {
   "releases": [
     {
-      "name": "projects/123/apps/1:123:android:abc/releases/0abcdef",
+      "name": "projects/726762523137/apps/1:726762523137:android:a700b1fa49f91e41eb0e00/releases/0abcdef",
       "releaseNotes": {
         "text": "sample 1.0.0 (uat) deployment 77"
       },
@@ -9,16 +9,16 @@
       "buildVersion": "10",
       "createTime": "2025-12-22T18:30:00.000Z",
       "firebaseConsoleUri": "https://console.firebase.google.com/project/np-mobile-poc/appdistribution/app/android:ar.io.nullplatform.sample/releases/0abcdef",
-      "testingUri": "https://appdistribution.firebase.google.com/testerapps/1:123:android:abc/releases/0abcdef",
-      "binaryDownloadUri": "https://firebaseappdistribution.googleapis.com/app-binary-downloads/projects/123/apps/1:123:android:abc/releases/0abcdef/binaries/x/app.apk"
+      "testingUri": "https://appdistribution.firebase.google.com/testerapps/1:726762523137:android:a700b1fa49f91e41eb0e00/releases/0abcdef",
+      "binaryDownloadUri": "https://firebaseappdistribution.googleapis.com/app-binary-downloads/projects/726762523137/apps/1:726762523137:android:a700b1fa49f91e41eb0e00/releases/0abcdef/binaries/x/app.apk"
     },
     {
-      "name": "projects/123/apps/1:123:android:abc/releases/0fedcba",
+      "name": "projects/726762523137/apps/1:726762523137:android:a700b1fa49f91e41eb0e00/releases/0fedcba",
       "displayVersion": "0.9.0",
       "buildVersion": "9",
       "createTime": "2025-12-15T09:05:00.000Z",
       "firebaseConsoleUri": "https://console.firebase.google.com/project/np-mobile-poc/appdistribution/app/android:ar.io.nullplatform.sample/releases/0fedcba",
-      "testingUri": "https://appdistribution.firebase.google.com/testerapps/1:123:android:abc/releases/0fedcba"
+      "testingUri": "https://appdistribution.firebase.google.com/testerapps/1:726762523137:android:a700b1fa49f91e41eb0e00/releases/0fedcba"
     }
   ]
 }

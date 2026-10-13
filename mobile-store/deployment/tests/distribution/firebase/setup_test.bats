@@ -31,7 +31,7 @@ teardown() {
 	assert_equal "$status" "0"
 	assert_line "🔍 Validating Firebase App Distribution configuration..."
 	assert_line "   ✅ firebase_project=np-mobile-poc"
-	assert_line "   ✅ firebase_app_id_android=1:123:android:abc"
+	assert_line "   ✅ firebase_app_id_android=1:726762523137:android:a700b1fa49f91e41eb0e00"
 	assert_line "   📡 Reading secret 'mobile/firebase-sa'"
 	assert_line "   ✅ credentials=$WORKDIR/firebase-sa.json (distributor@np-mobile-poc.iam.gserviceaccount.com)"
 	assert_line "✨ Firebase App Distribution configured"
@@ -39,7 +39,7 @@ teardown() {
 
 	source "$SCRIPT"
 	assert_equal "$FIREBASE_PROJECT" "np-mobile-poc"
-	assert_equal "$FIREBASE_APP_ID_ANDROID" "1:123:android:abc"
+	assert_equal "$FIREBASE_APP_ID_ANDROID" "1:726762523137:android:a700b1fa49f91e41eb0e00"
 	assert_empty "${FIREBASE_APP_ID_IOS:-}" "FIREBASE_APP_ID_IOS"
 	assert_equal "$GOOGLE_APPLICATION_CREDENTIALS" "$WORKDIR/firebase-sa.json"
 	assert_json_equal "$(cat "$WORKDIR/firebase-sa.json")" "$SERVICE_ACCOUNT" "service account"
@@ -48,16 +48,16 @@ teardown() {
 
 @test "Should export the ios app id when the scope publishes both platforms" {
 	export PLATFORMS="android ios"
-	with_scope_configuration '.firebase.app_id_ios = "1:123:ios:def"'
+	with_scope_configuration '.firebase.app_id_ios = "1:726762523137:ios:b811c2fb50a02f52fc1f11"'
 
 	run source "$SCRIPT"
 
 	assert_equal "$status" "0"
-	assert_line "   ✅ firebase_app_id_android=1:123:android:abc"
-	assert_line "   ✅ firebase_app_id_ios=1:123:ios:def"
+	assert_line "   ✅ firebase_app_id_android=1:726762523137:android:a700b1fa49f91e41eb0e00"
+	assert_line "   ✅ firebase_app_id_ios=1:726762523137:ios:b811c2fb50a02f52fc1f11"
 
 	source "$SCRIPT"
-	assert_equal "$FIREBASE_APP_ID_IOS" "1:123:ios:def"
+	assert_equal "$FIREBASE_APP_ID_IOS" "1:726762523137:ios:b811c2fb50a02f52fc1f11"
 }
 
 @test "Should never print the service account" {
@@ -140,4 +140,65 @@ teardown() {
 	assert_line "  🔧 How to fix:"
 	assert_line "    • Store the full JSON key of a service account with the Firebase App Distribution Admin role"
 	refute_output_contains "not-a-service-account"
+}
+
+# =============================================================================
+# Hardening: secret namespace and the shape of the Firebase ids
+# =============================================================================
+@test "Should reject a credentials secret outside the mobile/ namespace without reading it" {
+	with_scope_configuration '.firebase.credentials_secret = "prod/firebase-sa"'
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Secret name 'prod/firebase-sa' is outside the mobile/ namespace (firebase.credentials_secret)"
+	assert_line "  💡 Possible causes:"
+	assert_line "    • The 'Mobile store' scope configuration names a secret this scope is not allowed to read"
+	assert_line "  🔧 How to fix:"
+	assert_line "    • Store the secret under the mobile/ prefix (e.g. mobile/firebase-sa) and set firebase.credentials_secret to that name"
+	[ ! -f "$AWS_MOCK_CALLS_LOG" ]
+}
+
+@test "Should reject a Firebase app id that is not shaped like one" {
+	local app_id
+	for app_id in "1:726762523137:android:a700b1fa49f91e41eb0e00 --token x" "2:726762523137:android:a700b1fa" "1:726762523137:web:a700b1fa" "1:abc:android:a700b1fa" "1:726762523137:android:ZZZ"; do
+		with_scope_configuration ".firebase.app_id_android = \"$app_id\""
+
+		run source "$SCRIPT"
+
+		assert_equal "$status" "1"
+		assert_line "   ❌ firebase.app_id_android '$app_id' is not a Firebase app id"
+		assert_line "  💡 Possible causes:"
+		assert_line "    • The value was copied with extra characters, or it is the app id of another platform"
+		assert_line "  🔧 How to fix:"
+		assert_line "    • Copy the android app id from the Firebase console (Project settings > Your apps): it looks like 1:1234567890:android:abcdef0123456789"
+		[ ! -f "$AWS_MOCK_CALLS_LOG" ]
+	done
+}
+
+@test "Should reject the ios app id with the android shape" {
+	export PLATFORMS="android ios"
+	with_scope_configuration '.firebase.app_id_ios = "1:726762523137:android:a700b1fa49f91e41eb0e00"'
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ firebase.app_id_ios '1:726762523137:android:a700b1fa49f91e41eb0e00' is not a Firebase app id"
+}
+
+@test "Should reject a Firebase project id with unexpected characters" {
+	local project
+	for project in "np-mobile-poc --token x" "NP_Mobile" "np-mobile-poc;rm" "np mobile"; do
+		with_scope_configuration ".firebase.project = \"$project\""
+
+		run source "$SCRIPT"
+
+		assert_equal "$status" "1"
+		assert_line "   ❌ firebase.project '$project' is not a Firebase project id"
+		assert_line "  💡 Possible causes:"
+		assert_line "    • The value is the project name or number instead of the project id"
+		assert_line "  🔧 How to fix:"
+		assert_line "    • Copy the project id from the Firebase console (Project settings > General): lowercase letters, digits and dashes only"
+		[ ! -f "$AWS_MOCK_CALLS_LOG" ]
+	done
 }

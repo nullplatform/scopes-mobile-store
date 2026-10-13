@@ -1,0 +1,108 @@
+#!/bin/bash
+# =============================================================================
+# Input validators shared by the layers (sourced).
+#
+# Values that reach cloud CLIs come from the scope configuration and the
+# asset registry; the agent role is broader than any single scope, so every
+# layer checks that what it is told to read belongs to this scope:
+#
+#   validate_scope_secret_name <name> <field> <example>
+#       Secrets must live under the mobile/ prefix (what the IAM policy of
+#       the scope allows). Rejects anything else, including paths and ARNs.
+#   validate_asset_url <url>
+#       Assets must come from ASSETS_BUCKET: s3://<bucket>/... or the
+#       virtual-hosted https url of the bucket (<bucket>.s3.amazonaws.com or
+#       <bucket>.s3.<region>.amazonaws.com).
+#   validate_firebase_project <project>
+#   validate_firebase_app_id <platform> <app id>
+#
+# Each prints the troubleshooting block to stderr and returns 1 on rejection.
+# =============================================================================
+
+validate_scope_secret_name() {
+	local name="$1" field="$2" example="$3"
+	if [[ "$name" =~ ^mobile/[a-zA-Z0-9/_-]+$ ]] && [[ "$name" != *"/../"* ]] && [[ "$name" != *"/./"* ]]; then
+		return 0
+	fi
+	{
+		echo "   ❌ Secret name '$name' is outside the mobile/ namespace ($field)"
+		echo "  💡 Possible causes:"
+		echo "    • The 'Mobile store' scope configuration names a secret this scope is not allowed to read"
+		echo "  🔧 How to fix:"
+		echo "    • Store the secret under the mobile/ prefix (e.g. $example) and set $field to that name"
+	} >&2
+	return 1
+}
+
+validate_asset_url() {
+	local url="$1" bucket="${ASSETS_BUCKET:-}" host
+
+	if [ -z "$bucket" ]; then
+		{
+			echo "   ❌ ASSETS_BUCKET is not set"
+			echo "  💡 Possible causes:"
+			echo "    • build_context did not run before this step"
+			echo "  🔧 How to fix:"
+			echo "    • Run the deployment workflow from the start so build_context resolves the assets bucket"
+		} >&2
+		return 1
+	fi
+
+	case "$url" in
+		"s3://$bucket/"?*) return 0 ;;
+		https://*)
+			host="${url#https://}"
+			host="${host%%/*}"
+			case "$host" in
+				"$bucket.s3.amazonaws.com") return 0 ;;
+				"$bucket.s3."*".amazonaws.com")
+					local region="${host#"$bucket".s3.}"
+					region="${region%.amazonaws.com}"
+					if [[ "$region" =~ ^[a-z0-9-]+$ ]] && [[ "${url#https://$host/}" != "$url" ]]; then
+						return 0
+					fi
+					;;
+			esac
+			;;
+	esac
+
+	{
+		echo "   ❌ Asset URL is outside the configured assets bucket '$bucket': $url"
+		echo "  💡 Possible causes:"
+		echo "    • The CI uploaded the asset to a bucket other than assets.bucket of the 'Mobile store' scope configuration"
+		echo "    • The asset url was tampered with"
+		echo "  🔧 How to fix:"
+		echo "    • Make the CI upload the binaries to s3://$bucket and register that url, or set assets.bucket to the bucket the CI uses"
+	} >&2
+	return 1
+}
+
+validate_firebase_project() {
+	local project="$1"
+	if [[ "$project" =~ ^[a-z0-9-]+$ ]]; then
+		return 0
+	fi
+	{
+		echo "   ❌ firebase.project '$project' is not a Firebase project id"
+		echo "  💡 Possible causes:"
+		echo "    • The value is the project name or number instead of the project id"
+		echo "  🔧 How to fix:"
+		echo "    • Copy the project id from the Firebase console (Project settings > General): lowercase letters, digits and dashes only"
+	} >&2
+	return 1
+}
+
+validate_firebase_app_id() {
+	local platform="$1" app_id="$2"
+	if [[ "$app_id" =~ ^1:[0-9]+:(android|ios):[a-f0-9]+$ ]] && [[ "$app_id" == "1:"*":$platform:"* ]]; then
+		return 0
+	fi
+	{
+		echo "   ❌ firebase.app_id_$platform '$app_id' is not a Firebase app id"
+		echo "  💡 Possible causes:"
+		echo "    • The value was copied with extra characters, or it is the app id of another platform"
+		echo "  🔧 How to fix:"
+		echo "    • Copy the $platform app id from the Firebase console (Project settings > Your apps): it looks like 1:1234567890:$platform:abcdef0123456789"
+	} >&2
+	return 1
+}

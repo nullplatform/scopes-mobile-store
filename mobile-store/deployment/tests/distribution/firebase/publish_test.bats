@@ -21,7 +21,7 @@ setup() {
 	cp "$AWS_MOCK_S3_OBJECT" "$WORKDIR/android/app.apk"
 	export SIGNED_BINARY_PATH_ANDROID="$WORKDIR/android/app.apk"
 	export FIREBASE_PROJECT="np-mobile-poc"
-	export FIREBASE_APP_ID_ANDROID="1:123:android:abc"
+	export FIREBASE_APP_ID_ANDROID="1:726762523137:android:a700b1fa49f91e41eb0e00"
 	export GOOGLE_APPLICATION_CREDENTIALS="$WORKDIR/firebase-sa.json"
 	echo '{}' > "$GOOGLE_APPLICATION_CREDENTIALS"
 }
@@ -36,17 +36,17 @@ teardown() {
 	assert_equal "$status" "0"
 	assert_line "📝 Publishing release 1.0.0 to Firebase App Distribution (group 'internal')"
 	assert_line "   📡 android: distributing $WORKDIR/android/app.apk to Firebase group 'internal'"
-	assert_line "   ✅ android: distributed to Firebase group 'internal' (release projects/123/apps/1:123:android:abc/releases/0abcdef)"
+	assert_line "   ✅ android: distributed to Firebase group 'internal' (release projects/726762523137/apps/1:726762523137:android:a700b1fa49f91e41eb0e00/releases/0abcdef)"
 	assert_line "✨ Published to Firebase App Distribution: $WORKDIR/distribution.json"
-	assert_mock_call "$FIREBASE_MOCK_LOG" "firebase appdistribution:distribute $WORKDIR/android/app.apk --app 1:123:android:abc --project np-mobile-poc --groups internal --release-notes sample 1.0.0 (uat) deployment 77 --non-interactive"
+	assert_mock_call "$FIREBASE_MOCK_LOG" "firebase appdistribution:distribute $WORKDIR/android/app.apk --app 1:726762523137:android:a700b1fa49f91e41eb0e00 --project np-mobile-poc --groups internal --release-notes sample 1.0.0 (uat) deployment 77 --non-interactive"
 	assert_json_equal "$(cat "$WORKDIR/distribution.json")" '{
 		"provider": "firebase",
 		"project": "np-mobile-poc",
 		"group": "internal",
 		"releases": {
 			"android": {
-				"app_id": "1:123:android:abc",
-				"name": "projects/123/apps/1:123:android:abc/releases/0abcdef",
+				"app_id": "1:726762523137:android:a700b1fa49f91e41eb0e00",
+				"name": "projects/726762523137/apps/1:726762523137:android:a700b1fa49f91e41eb0e00/releases/0abcdef",
 				"group": "internal"
 			}
 		}
@@ -60,7 +60,7 @@ teardown() {
 	run bash "$SCRIPT"
 
 	assert_equal "$status" "0"
-	assert_line "   ✅ android: distributed to Firebase group 'internal' (release projects/123/apps/1:123:android:abc/releases/9zyx)"
+	assert_line "   ✅ android: distributed to Firebase group 'internal' (release projects/726762523137/apps/1:726762523137:android:a700b1fa49f91e41eb0e00/releases/9zyx)"
 }
 
 @test "Should warn and record an unknown release when the CLI output has no release id" {
@@ -69,7 +69,7 @@ teardown() {
 	run bash "$SCRIPT"
 
 	assert_equal "$status" "0"
-	assert_line "   ⚠️ android: the firebase CLI did not report the release name; check the Firebase console for the latest release of 1:123:android:abc"
+	assert_line "   ⚠️ android: the firebase CLI did not report the release name; check the Firebase console for the latest release of 1:726762523137:android:a700b1fa49f91e41eb0e00"
 	assert_line "   ✅ android: distributed to Firebase group 'internal' (release unknown)"
 	assert_equal "$(jq -r '.releases.android.name' "$WORKDIR/distribution.json")" "null"
 }
@@ -80,14 +80,14 @@ teardown() {
 	mkdir -p "$WORKDIR/ios"
 	make_fixture_ipa "$WORKDIR/ios/app.ipa"
 	export SIGNED_BINARY_PATH_IOS="$WORKDIR/ios/app.ipa"
-	export FIREBASE_APP_ID_IOS="1:123:ios:def"
+	export FIREBASE_APP_ID_IOS="1:726762523137:ios:b811c2fb50a02f52fc1f11"
 
 	run bash "$SCRIPT"
 
 	assert_equal "$status" "0"
-	assert_line "   ✅ android: distributed to Firebase group 'testers' (release projects/123/apps/1:123:android:abc/releases/0abcdef)"
-	assert_line "   ✅ ios: distributed to Firebase group 'testers' (release projects/123/apps/1:123:ios:def/releases/0abcdef)"
-	assert_mock_call "$FIREBASE_MOCK_LOG" "firebase appdistribution:distribute $WORKDIR/ios/app.ipa --app 1:123:ios:def --project np-mobile-poc --groups testers --release-notes sample 1.0.0 (uat) deployment 77 --non-interactive"
+	assert_line "   ✅ android: distributed to Firebase group 'testers' (release projects/726762523137/apps/1:726762523137:android:a700b1fa49f91e41eb0e00/releases/0abcdef)"
+	assert_line "   ✅ ios: distributed to Firebase group 'testers' (release projects/726762523137/apps/1:726762523137:ios:b811c2fb50a02f52fc1f11/releases/0abcdef)"
+	assert_mock_call "$FIREBASE_MOCK_LOG" "firebase appdistribution:distribute $WORKDIR/ios/app.ipa --app 1:726762523137:ios:b811c2fb50a02f52fc1f11 --project np-mobile-poc --groups testers --release-notes sample 1.0.0 (uat) deployment 77 --non-interactive"
 	assert_equal "$(jq -r '.releases | keys | join(",")' "$WORKDIR/distribution.json")" "android,ios"
 }
 
@@ -115,7 +115,7 @@ teardown() {
 	assert_line "   ❌ android: Firebase App Distribution rejected the upload of $WORKDIR/android/app.apk"
 	assert_line "      Error: HTTP Error: 404, App not found"
 	assert_line "  💡 Possible causes:"
-	assert_line "    • The app id '1:123:android:abc' does not exist in the Firebase project 'np-mobile-poc'"
+	assert_line "    • The app id '1:726762523137:android:a700b1fa49f91e41eb0e00' does not exist in the Firebase project 'np-mobile-poc'"
 	assert_line "  🔧 How to fix:"
 	assert_line "    • Copy the android app id from the Firebase console (Project settings > Your apps) into firebase.app_id_android"
 }
