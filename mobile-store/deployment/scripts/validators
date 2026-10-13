@@ -15,6 +15,14 @@
 #       <bucket>.s3.<region>.amazonaws.com).
 #   validate_firebase_project <project>
 #   validate_firebase_app_id <platform> <app id>
+#   validate_gate_for_channel
+#       Authorization policy of the approval gate: CHANNEL=production with
+#       GATE_LAYER=none is refused on public stores (app-store, google-play)
+#       and only warned about on private distributions (firebase,
+#       foundry-eas, intune). Unknown distributions are refused.
+#
+# The validators above are security checks and never depend on the channel
+# or the gate: every layer calls them unconditionally.
 #
 # Each prints the troubleshooting block to stderr and returns 1 on rejection.
 # =============================================================================
@@ -105,4 +113,52 @@ validate_firebase_app_id() {
 		echo "    • Copy the $platform app id from the Firebase console (Project settings > Your apps): it looks like 1:1234567890:$platform:abcdef0123456789"
 	} >&2
 	return 1
+}
+
+validate_gate_for_channel() {
+	local channel="${CHANNEL:-}" gate="${GATE_LAYER:-}" distribution="${DISTRIBUTION_LAYER:-}"
+
+	[ "$channel" = "production" ] || return 0
+	[ "$gate" = "none" ] || return 0
+
+	if [ -z "$distribution" ]; then
+		{
+			echo "   ❌ Cannot apply the production gate policy: DISTRIBUTION_LAYER is not set"
+			echo "  💡 Possible causes:"
+			echo "    • build_context did not run before this step"
+			echo "  🔧 How to fix:"
+			echo "    • Run the deployment workflow from the start so build_context resolves the distribution layer"
+		} >&2
+		return 1
+	fi
+
+	case "$distribution" in
+		app-store | google-play)
+			{
+				echo "   ❌ Publishing to production on a public store requires gate_layer=store-review"
+				echo "   📋 Channel: $channel | Distribution: $distribution | Gate: $gate"
+				echo "  💡 Possible causes:"
+				echo "    • The 'Mobile store' scope configuration sets gate_layer to none for a scope that publishes to $distribution"
+				echo "  🔧 How to fix:"
+				echo "    • Set gate_layer to store-review in the scope configuration of this namespace or dimension"
+				echo "    • Or use the internal or testers channel, which do not reach the public store"
+			} >&2
+			return 1
+			;;
+		firebase | foundry-eas | intune)
+			echo "   ⚠️ Publishing to production without an external approval gate"
+			echo "   📋 Channel: $channel | Distribution: $distribution | Gate: $gate (testers get the build as soon as it is uploaded)"
+			return 0
+			;;
+		*)
+			{
+				echo "   ❌ Unknown distribution layer '$distribution': cannot decide whether production needs an approval gate"
+				echo "  💡 Possible causes:"
+				echo "    • A new distribution layer was added without classifying it as a public store or a private distribution"
+				echo "  🔧 How to fix:"
+				echo "    • Add '$distribution' to validate_gate_for_channel in deployment/scripts/validators"
+			} >&2
+			return 1
+			;;
+	esac
 }
