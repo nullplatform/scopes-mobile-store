@@ -151,3 +151,35 @@ teardown() {
 	assert_equal "$status" "0"
 	assert_line "   ✅ BINARY_PATH_ANDROID=$WORKDIR/android/app.apk"
 }
+
+# =============================================================================
+# Real APKs have thousands of entries: the validation must not die of SIGPIPE
+# under the pipefail the workflow session inherits.
+# =============================================================================
+@test "Should accept an APK with thousands of entries with pipefail active" {
+	local dir="$TEST_TMP_DIR/big"
+	mkdir -p "$dir/res"
+	: > "$dir/AndroidManifest.xml"
+	local i
+	for i in $(seq 1 3200); do : > "$dir/res/f$i.xml"; done
+	(cd "$dir" && zip -q "$TEST_TMP_DIR/big.apk" AndroidManifest.xml && zip -qr "$TEST_TMP_DIR/big.apk" res)
+	export AWS_MOCK_S3_OBJECT="$TEST_TMP_DIR/big.apk"
+
+	run bash -c 'set -euo pipefail; source "$0"; echo "exported=$BINARY_PATH_ANDROID"' "$SCRIPT"
+
+	assert_equal "$status" "0"
+	assert_line "   ✅ BINARY_PATH_ANDROID=$WORKDIR/android/app.apk"
+	assert_line "exported=$WORKDIR/android/app.apk"
+}
+
+@test "Should fail with the troubleshooting block when the archive cannot be listed" {
+	printf 'not a zip at all' > "$TEST_TMP_DIR/garbage.apk"
+	export AWS_MOCK_S3_OBJECT="$TEST_TMP_DIR/garbage.apk"
+
+	run bash -c 'set -euo pipefail; source "$0"' "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ $WORKDIR/android/app.apk is not an Android package: the file is not a zip archive"
+	assert_line "  💡 Possible causes:"
+	assert_line "    • The download was truncated"
+}

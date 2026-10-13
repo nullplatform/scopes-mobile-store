@@ -18,7 +18,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/validators"
 
 prepare_platform_binary() {
 	local platform="$1" extension="$2" description="$3" entry_regex="$4" ci_hint="$5"
-	local scripts_dir url bucket destination extension_upper
+	local scripts_dir url bucket destination extension_upper listing
 
 	scripts_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -77,7 +77,20 @@ prepare_platform_binary() {
 	fi
 
 	extension_upper=$(echo "$extension" | tr '[:lower:]' '[:upper:]')
-	if ! unzip -l "$destination" 2>/dev/null | grep -Eq "$entry_regex"; then
+	# Capture the listing first: `unzip -l | grep -q` dies of SIGPIPE (141)
+	# under pipefail on real binaries with thousands of entries.
+	if ! listing=$(unzip -l "$destination" 2>/dev/null); then
+		{
+			echo "   ❌ $destination is not ${description%%:*}: the file is not a zip archive"
+			echo "  💡 Possible causes:"
+			echo "    • The download was truncated"
+			echo "    • The CI registered a file that is not an $extension_upper as the '$platform-${DIMENSION:-default}' asset"
+			echo "  🔧 How to fix:"
+			echo "    • Make the CI upload the $extension_upper produced by $ci_hint as the '$platform-${DIMENSION:-default}' asset"
+		} >&2
+		return 1
+	fi
+	if ! grep -Eq "$entry_regex" <<<"$listing"; then
 		{
 			echo "   ❌ $destination is not $description inside the archive"
 			echo "  💡 Possible causes:"
