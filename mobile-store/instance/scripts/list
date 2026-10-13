@@ -7,21 +7,36 @@
 # stdout on fd 3, the stdout reserve_stdout kept for the answer (or on stdout
 # when run on its own). A layer without list_releases answers no instances.
 #
+# The workdir of this run ($WORKDIR_BASE/scope-<id>-XXXXXX, unique per run,
+# from build_context in scope mode) is removed when the step ends, whatever
+# the outcome: it holds the service account the distribution setup wrote.
+# A WORKDIR outside that pattern (a deployment's) is never touched.
+#
 # Inputs: DISTRIBUTION_LAYER, SERVICE_PATH, plus what list_releases needs
 # (the distribution layer setup ran in the previous step).
 # =============================================================================
 
+mobile_store_instance_cleanup() {
+	local base="${WORKDIR_BASE:-}" workdir="${WORKDIR:-}"
+	if [ -n "$base" ] && [ -d "$workdir" ] && [[ "$workdir" == "$base"/scope-*-* ]] && [[ "$workdir" != *"/.."* ]]; then
+		rm -rf "$workdir"
+	fi
+}
+
 mobile_store_instance_list() {
-	local layer="${DISTRIBUTION_LAYER:-}" list_script answer_fd="${MOBILE_STORE_ANSWER_FD:-1}"
+	local layer="${DISTRIBUTION_LAYER:-}" list_script answer_fd="${MOBILE_STORE_ANSWER_FD:-1}" status=0
 
 	list_script="$SERVICE_PATH/deployment/distribution/$layer/list_releases"
 	if ! [[ "$layer" =~ ^[a-z0-9-]+$ ]] || [ ! -x "$list_script" ]; then
 		echo "   ⚠️ The distribution layer '$layer' cannot list releases; answering no instances" >&2
 		echo '{"results":[]}' >&"$answer_fd"
+		mobile_store_instance_cleanup
 		return 0
 	fi
 
-	"$list_script" >&"$answer_fd"
+	"$list_script" >&"$answer_fd" || status=$?
+	mobile_store_instance_cleanup
+	return "$status"
 }
 
 mobile_store_instance_list

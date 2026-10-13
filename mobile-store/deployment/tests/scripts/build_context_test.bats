@@ -36,7 +36,7 @@ setup() {
 	export NP_MOCK_DEPLOYMENT_LIST="$MOCKS_DIR/deployment_list.json"
 	export NP_MOCK_RELEASE_READ="$MOCKS_DIR/release_read.json"
 
-	unset SIGNING_LAYER DISTRIBUTION_LAYER GATE_LAYER ASSETS_BUCKET ASSETS_REGION BUILD_CONTEXT_MODE WORKDIR_BASE
+	unset SIGNING_LAYER DISTRIBUTION_LAYER GATE_LAYER ASSETS_BUCKET ASSETS_REGION BUILD_CONTEXT_MODE BUILD_CONTEXT_REQUIRE WORKDIR_BASE SCOPE_ID
 }
 
 teardown() {
@@ -722,7 +722,7 @@ scope_context() {
 	assert_equal "$ANDROID_PACKAGE" "ar.io.nullplatform.sample"
 	assert_empty "$PREVIOUS_DEPLOYMENT_ID" "PREVIOUS_DEPLOYMENT_ID"
 	assert_empty "$PREVIOUS_RELEASE_SEMVER" "PREVIOUS_RELEASE_SEMVER"
-	assert_equal "$WORKDIR" "$TEST_TMP_DIR/work/scope-7"
+	[[ "$WORKDIR" == "$TEST_TMP_DIR/work/scope-7-"* ]]
 	assert_directory_exists "$WORKDIR"
 
 	refute_np_called "asset list"
@@ -740,8 +740,9 @@ scope_context() {
 	assert_line "   📋 Scope: mobile/sample/store (id 7) | Dimension: uat"
 	assert_line "   📋 Platforms: android | Channel: internal | Rollout: 5%"
 	assert_line "   ✅ distribution_layer=firebase"
-	assert_line "   📋 Assets and previous deployment: skipped (scope mode)"
-	assert_line "   📋 Workdir: $TEST_TMP_DIR/work/scope-7"
+	assert_line "   📋 Assets of the current release: skipped (scope mode)"
+	assert_line "   📋 Previous deployment: skipped (scope mode)"
+	[[ "$output" == *"   📋 Workdir: $TEST_TMP_DIR/work/scope-7-"* ]]
 	assert_line "✨ Build context ready"
 	refute_line "📡 Resolving build assets (type bundle, build 10)..."
 }
@@ -774,14 +775,116 @@ scope_context() {
 	run source "$SCRIPT"
 
 	assert_equal "$status" "1"
-	assert_line "   ❌ Unknown BUILD_CONTEXT_MODE 'instance': expected deployment or scope"
+	assert_line "   ❌ Unknown BUILD_CONTEXT_MODE 'instance': expected deployment, rollback or scope"
 	assert_line "  💡 Possible causes:"
 	assert_line "    • The workflow step that runs build_context sets configuration.BUILD_CONTEXT_MODE to an unexpected value"
 	assert_line "  🔧 How to fix:"
-	assert_line "    • Set BUILD_CONTEXT_MODE to scope (scope and instance workflows) or leave it unset (deployment workflows)"
+	assert_line "    • Set BUILD_CONTEXT_MODE to scope (scope and instance workflows), rollback (rollback workflow) or leave it unset (deployment workflows)"
 }
 
 @test "Should still require a deployment in the default mode" {
+	with_context 'del(.deployment)'
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Invalid deployment id '': must be an integer"
+}
+
+@test "Should give every scope-mode run its own workdir" {
+	scope_context
+
+	run_build_context
+	local first="$WORKDIR"
+	echo '{}' > "$first/firebase-sa.json"
+	run_build_context
+
+	[[ "$first" == "$TEST_TMP_DIR/work/scope-7-"* ]]
+	[[ "$WORKDIR" == "$TEST_TMP_DIR/work/scope-7-"* ]]
+	[ "$first" != "$WORKDIR" ]
+	assert_file_exists "$first/firebase-sa.json"
+	assert_file_not_exists "$WORKDIR/firebase-sa.json"
+}
+
+@test "Should refuse a scope-mode context that belongs to another scope than the requested one" {
+	scope_context
+	export SCOPE_ID="99"
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ The context belongs to scope 7, not to the requested scope 99"
+	assert_line "  💡 Possible causes:"
+	assert_line "    • build-context resolved a different scope than the one the notification asks about"
+	assert_line "  🔧 How to fix:"
+	assert_line "    • Run the workflow with np service workflow exec --build-context and .notification.parameters.scope_id set to the requested scope"
+}
+
+@test "Should accept a scope-mode context of the requested scope" {
+	scope_context
+	export SCOPE_ID="7"
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "0"
+}
+
+@test "Should only require the distribution layer and the assets bucket with BUILD_CONTEXT_REQUIRE=distribution" {
+	scope_context
+	export BUILD_CONTEXT_REQUIRE="distribution"
+	export NP_MOCK_PROVIDER_LIST="$TEST_TMP_DIR/provider_list.json"
+	jq '.results |= map(.attributes |= del(.signing_layer, .gate_layer))' "$MOCKS_DIR/scope_configuration/provider_list.json" > "$NP_MOCK_PROVIDER_LIST"
+
+	run_build_context
+
+	assert_equal "$DISTRIBUTION_LAYER" "firebase"
+	assert_empty "$SIGNING_LAYER" "SIGNING_LAYER"
+	assert_empty "$GATE_LAYER" "GATE_LAYER"
+}
+
+@test "Should still require signing and gate layers by default" {
+	scope_context
+	export NP_MOCK_PROVIDER_LIST="$TEST_TMP_DIR/provider_list.json"
+	jq '.results |= map(.attributes |= del(.signing_layer, .gate_layer))' "$MOCKS_DIR/scope_configuration/provider_list.json" > "$NP_MOCK_PROVIDER_LIST"
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Scope configuration is incomplete: missing signing_layer, gate_layer"
+}
+
+# =============================================================================
+# Rollback mode: the previous deployment, never the assets of the current release
+# =============================================================================
+@test "Should resolve the previous deployment without the assets of the current build in rollback mode" {
+	export BUILD_CONTEXT_MODE="rollback"
+	with_context 'del(.asset) | .release.build_id = 404'
+	echo '{"results":[]}' > "$TEST_TMP_DIR/no_assets.json"
+	export NP_MOCK_ASSET_LIST="$TEST_TMP_DIR/no_assets.json"
+
+	run_build_context
+
+	assert_equal "$DEPLOYMENT_ID" "77"
+	assert_equal "$PREVIOUS_DEPLOYMENT_ID" "70"
+	assert_equal "$PREVIOUS_RELEASE_SEMVER" "0.9.0"
+	assert_equal "$ASSETS_JSON" "{}"
+	assert_equal "$WORKDIR" "$TEST_TMP_DIR/work/77"
+	refute_np_called "asset list"
+}
+
+@test "Should report no previous deployment in rollback mode when there is none" {
+	export BUILD_CONTEXT_MODE="rollback"
+	export NP_MOCK_DEPLOYMENT_LIST="$MOCKS_DIR/deployment_list_no_previous.json"
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "0"
+	assert_line "   📋 Assets of the current release: skipped (rollback mode)"
+	assert_line "   📋 Previous deployment: none"
+}
+
+@test "Should still require the deployment id in rollback mode" {
+	export BUILD_CONTEXT_MODE="rollback"
 	with_context 'del(.deployment)'
 
 	run source "$SCRIPT"

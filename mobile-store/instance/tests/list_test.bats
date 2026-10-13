@@ -67,3 +67,38 @@ teardown() {
 	assert_equal "$status" "1"
 	assert_equal "$output" '{"results": []}'
 }
+
+@test "Should remove the workdir of its own run and leave a concurrent run's alone" {
+	export WORKDIR_BASE="$TEST_TMP_DIR/work"
+	local run_a="$WORKDIR_BASE/scope-7-aaaaaa" run_b="$WORKDIR_BASE/scope-7-bbbbbb"
+	mkdir -p "$run_a" "$run_b"
+	echo '{}' > "$run_a/firebase-sa.json"
+	echo '{}' > "$run_b/firebase-sa.json"
+
+	WORKDIR="$run_a" run bash -c 'exec 2>/dev/null; source "$0"' "$LIST"
+
+	assert_equal "$status" "0"
+	[ ! -d "$run_a" ]
+	assert_file_exists "$run_b/firebase-sa.json"
+}
+
+@test "Should remove its workdir when list_releases fails too" {
+	export WORKDIR_BASE="$TEST_TMP_DIR/work"
+	mkdir -p "$WORKDIR_BASE/scope-7-cccccc"
+	printf '#!/bin/bash\nexit 1\n' > "$SERVICE_PATH/deployment/distribution/fake/list_releases"
+
+	WORKDIR="$WORKDIR_BASE/scope-7-cccccc" run bash -c 'exec 2>/dev/null; source "$0"' "$LIST"
+
+	assert_equal "$status" "1"
+	[ ! -d "$WORKDIR_BASE/scope-7-cccccc" ]
+}
+
+@test "Should never remove a deployment workdir" {
+	export WORKDIR_BASE="$TEST_TMP_DIR/work"
+	mkdir -p "$WORKDIR_BASE/77"
+
+	WORKDIR="$WORKDIR_BASE/77" run bash -c 'exec 2>/dev/null; source "$0"' "$LIST"
+
+	assert_equal "$status" "0"
+	assert_directory_exists "$WORKDIR_BASE/77"
+}
