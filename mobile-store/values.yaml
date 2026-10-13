@@ -4,7 +4,8 @@ provider_categories:
   - scope-configurations
   - cloud-providers
 configuration:
-  ASSET_NAME_PREFIX: android          # assets are named <prefix>-<dimension>, e.g. android-uat
-  DEPLOYMENT_MAX_WAIT_IN_SECONDS: 600
-  FIREBASE_CLI_VERSION: "14"
-  WORKDIR: /tmp/mobile-store
+  DEPLOYMENT_MAX_WAIT_IN_SECONDS: 600       # upper bound for a single deployment step before it is failed
+  FIREBASE_CLI_VERSION: "14"                # firebase-tools major version installed when the distribution layer is firebase
+  WORKDIR: /tmp/mobile-store                # scratch directory where binaries are downloaded and signed
+  GATE_POLL_INTERVAL_IN_SECONDS: 300        # how often the gate layer checks the external approval (store review)
+  GATE_MAX_WAIT_IN_SECONDS: 259200          # 3 days: give up waiting for the external approval after this

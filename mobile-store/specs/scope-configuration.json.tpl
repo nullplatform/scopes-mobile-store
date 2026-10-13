@@ -1,6 +1,6 @@
 {
   "name": "Mobile store",
-  "description": "Configuration for mobile store scopes: which platform, signing, distribution and gate implementations run for a namespace or dimension",
+  "description": "Configuration for mobile store scopes: which signing, distribution and gate implementations run for a namespace or dimension. The android and ios objects configure each platform that the scopes of that namespace or dimension will publish; the developer picks the platform on the scope.",
   "category": "scope-configurations",
   "icon": "mdi:cellphone-arrow-down",
   "visible_to": [
@@ -10,7 +10,6 @@
   "schema": {
     "type": "object",
     "required": [
-      "platform_layer",
       "signing_layer",
       "distribution_layer",
       "gate_layer",
@@ -68,22 +67,6 @@
       }
     ],
     "properties": {
-      "platform_layer": {
-        "type": "string",
-        "title": "Platform layer",
-        "description": "Platform implementation available in this environment. A scope created for both platforms runs the layer once per platform, so every platform it needs must have an implementation here.",
-        "default": "android",
-        "oneOf": [
-          {
-            "const": "android",
-            "title": "Android"
-          },
-          {
-            "const": "ios",
-            "title": "iOS"
-          }
-        ]
-      },
       "signing_layer": {
         "type": "string",
         "title": "Signing layer",
@@ -161,12 +144,12 @@
           "app_id_android": {
             "type": "string",
             "title": "Android app ID",
-            "description": "Firebase app ID of the Android app (e.g. 1:1234567890:android:abcdef). Required when the scope publishes Android binaries."
+            "description": "Firebase app ID of the Android app (e.g. 1:1234567890:android:abcdef). Validated at deploy time by the scope when the platform is used."
           },
           "app_id_ios": {
             "type": "string",
             "title": "iOS app ID",
-            "description": "Firebase app ID of the iOS app (e.g. 1:1234567890:ios:abcdef). Required when the scope publishes iOS binaries."
+            "description": "Firebase app ID of the iOS app (e.g. 1:1234567890:ios:abcdef). Validated at deploy time by the scope when the platform is used."
           },
           "credentials_secret": {
             "type": "string",
@@ -178,12 +161,12 @@
       "android": {
         "type": "object",
         "title": "Android",
-        "description": "Identity and signing material of the Android app.",
+        "description": "Identity and signing material of the Android app. Used by every scope of this namespace or dimension that publishes Android binaries.",
         "properties": {
           "package": {
             "type": "string",
             "title": "Package name",
-            "description": "Application ID of the Android app (e.g. ar.io.nullplatform.sample)."
+            "description": "Application ID of the Android app (e.g. ar.io.nullplatform.sample). Validated at deploy time by the scope when the platform is used."
           },
           "keystore_secret": {
             "type": "string",
@@ -195,17 +178,17 @@
       "ios": {
         "type": "object",
         "title": "iOS",
-        "description": "Identity and store credentials of the iOS app.",
+        "description": "Identity and store credentials of the iOS app. Used by every scope of this namespace or dimension that publishes iOS binaries.",
         "properties": {
           "bundle_id": {
             "type": "string",
             "title": "Bundle ID",
-            "description": "Bundle identifier of the iOS app (e.g. io.nullplatform.sample)."
+            "description": "Bundle identifier of the iOS app (e.g. io.nullplatform.sample). Validated at deploy time by the scope when the platform is used."
           },
           "app_store_connect_key_secret": {
             "type": "string",
             "title": "App Store Connect key secret",
-            "description": "Name of the secret in the secrets manager that holds the App Store Connect API key (issuer ID, key ID and .p8 contents)."
+            "description": "Name of the secret in the secrets manager that holds the App Store Connect API key (issuer ID, key ID and .p8 contents). Validated at deploy time by the scope when the platform is used."
           }
         }
       },
@@ -241,13 +224,6 @@
               "type": "Category",
               "label": "Layers",
               "elements": [
-                {
-                  "type": "Control",
-                  "scope": "#/properties/platform_layer",
-                  "options": {
-                    "format": "radio-cards"
-                  }
-                },
                 {
                   "type": "Control",
                   "scope": "#/properties/signing_layer",
