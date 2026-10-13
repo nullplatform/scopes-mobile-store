@@ -1,0 +1,52 @@
+#!/bin/bash
+# =============================================================================
+# Mock apksigner (Android build-tools) for the BATS tests.
+#
+#   apksigner sign --ks <file> ... --out <signed> <input>   copies input to signed
+#   apksigner verify <apk>                                  always succeeds
+#
+# APKSIGNER_MOCK_FAIL=sign makes the signing fail like a wrong password;
+# APKSIGNER_MOCK_FAIL=verify makes the verification fail.
+# When APKSIGNER_MOCK_LOG is set every invocation is appended as "apksigner <args>".
+# =============================================================================
+
+if [ -n "${APKSIGNER_MOCK_LOG:-}" ]; then
+  echo "apksigner $*" >> "$APKSIGNER_MOCK_LOG"
+fi
+
+case "${1:-}" in
+  sign)
+    if [ "${APKSIGNER_MOCK_FAIL:-}" = "sign" ]; then
+      echo "Exception in thread \"main\" java.io.IOException: keystore password was incorrect" >&2
+      exit 1
+    fi
+    shift
+    out=""
+    input=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --out) out="${2:-}"; shift 2 ;;
+        --ks | --ks-pass | --ks-key-alias | --key-pass) shift 2 ;;
+        *) input="$1"; shift ;;
+      esac
+    done
+    if [ -z "$out" ] || [ ! -f "$input" ]; then
+      echo "mock apksigner: missing --out or input ($input)" >&2
+      exit 1
+    fi
+    cp "$input" "$out"
+    exit 0
+    ;;
+  verify)
+    if [ "${APKSIGNER_MOCK_FAIL:-}" = "verify" ]; then
+      echo "DOES NOT VERIFY" >&2
+      echo "ERROR: Missing META-INF/MANIFEST.MF" >&2
+      exit 1
+    fi
+    exit 0
+    ;;
+  *)
+    echo "mock apksigner: unexpected command: apksigner $*" >&2
+    exit 1
+    ;;
+esac
