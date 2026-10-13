@@ -1,4 +1,10 @@
 # Operator configuration for every workflow (not shown to developers); each key under
 # configuration becomes an environment variable in the steps.
-# provider_categories: [cloud-providers]   # the providers --build-context loads into CONTEXT
-configuration: {}
+provider_categories:
+  - scope-configurations
+  - cloud-providers
+configuration:
+  ASSET_NAME_PREFIX: android          # assets are named <prefix>-<dimension>, e.g. android-uat
+  DEPLOYMENT_MAX_WAIT_IN_SECONDS: 600
+  FIREBASE_CLI_VERSION: "14"
+  WORKDIR: /tmp/mobile-store
