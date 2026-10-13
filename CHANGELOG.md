@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/nullplatform/scopes-mobile-store/compare/v0.1.1...v0.1.2) (2026-10-13)
+
+
+### Bug Fixes
+
+* **ci:** publish the worker image under agent-plugins/scopes/mobile-store as the template defines ([6d3321c](https://github.com/nullplatform/scopes-mobile-store/commit/6d3321c911b5100f9f0f2b453b6acfbe4375bbb8))
+
 ## [0.1.1](https://github.com/nullplatform/scopes-mobile-store/compare/v0.1.0...v0.1.1) (2026-10-13)
 
 
