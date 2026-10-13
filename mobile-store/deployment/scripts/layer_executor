@@ -28,14 +28,36 @@
 set -euo pipefail
 
 if [ -z "${LAYER_TYPE:-}" ]; then
-	echo "   ❌ LAYER_TYPE is not set" >&2
-	echo "  🔧 How to fix: add LAYER_TYPE to the workflow step configuration" >&2
+	{
+		echo "   ❌ LAYER_TYPE is not set"
+		echo "  💡 Possible causes:"
+		echo "    • The workflow step that runs layer_executor has no configuration.LAYER_TYPE"
+		echo "  🔧 How to fix:"
+		echo "    • Add LAYER_TYPE (signing, distribution or gate) to the workflow step configuration"
+	} >&2
 	exit 1
 fi
 
 if [ -z "${LAYER_VAR:-}" ]; then
-	echo "   ❌ LAYER_VAR is not set" >&2
-	echo "  🔧 How to fix: add LAYER_VAR to the workflow step configuration" >&2
+	{
+		echo "   ❌ LAYER_VAR is not set"
+		echo "  💡 Possible causes:"
+		echo "    • The workflow step that runs layer_executor has no configuration.LAYER_VAR"
+		echo "  🔧 How to fix:"
+		echo "    • Add LAYER_VAR (SIGNING_LAYER, DISTRIBUTION_LAYER or GATE_LAYER) to the workflow step configuration"
+	} >&2
+	exit 1
+fi
+
+# LAYER_VAR is expanded indirectly: it must be a plain variable name.
+if ! [[ "$LAYER_VAR" =~ ^[A-Z_][A-Z0-9_]*$ ]]; then
+	{
+		echo "   ❌ Invalid LAYER_VAR '$LAYER_VAR': must be an environment variable name (uppercase letters, digits and underscores)"
+		echo "  💡 Possible causes:"
+		echo "    • The workflow step configuration sets LAYER_VAR to something that is not a variable name"
+		echo "  🔧 How to fix:"
+		echo "    • Set LAYER_VAR to the variable build_context exports for this layer (SIGNING_LAYER, DISTRIBUTION_LAYER or GATE_LAYER)"
+	} >&2
 	exit 1
 fi
 

@@ -35,7 +35,10 @@ setup() {
 
 	assert_equal "$status" "1"
 	assert_line "   ❌ LAYER_TYPE is not set"
-	assert_line "  🔧 How to fix: add LAYER_TYPE to the workflow step configuration"
+	assert_line "  💡 Possible causes:"
+	assert_line "    • The workflow step that runs layer_executor has no configuration.LAYER_TYPE"
+	assert_line "  🔧 How to fix:"
+	assert_line "    • Add LAYER_TYPE (signing, distribution or gate) to the workflow step configuration"
 }
 
 @test "Should fail when LAYER_VAR is not set" {
@@ -45,7 +48,29 @@ setup() {
 
 	assert_equal "$status" "1"
 	assert_line "   ❌ LAYER_VAR is not set"
-	assert_line "  🔧 How to fix: add LAYER_VAR to the workflow step configuration"
+	assert_line "  💡 Possible causes:"
+	assert_line "    • The workflow step that runs layer_executor has no configuration.LAYER_VAR"
+	assert_line "  🔧 How to fix:"
+	assert_line "    • Add LAYER_VAR (SIGNING_LAYER, DISTRIBUTION_LAYER or GATE_LAYER) to the workflow step configuration"
+}
+
+@test "Should reject a LAYER_VAR that is not a variable name before expanding it" {
+	export LAYER_TYPE="distribution"
+	export DISTRIBUTION_LAYER="firebase"
+	local value
+	for value in "../x" "fire base" "distribution_layer" "DISTRIBUTION_LAYER[@]"; do
+		export LAYER_VAR="$value"
+
+		run source "$SCRIPT"
+
+		assert_equal "$status" "1"
+		assert_line "   ❌ Invalid LAYER_VAR '$value': must be an environment variable name (uppercase letters, digits and underscores)"
+		assert_line "  💡 Possible causes:"
+		assert_line "    • The workflow step configuration sets LAYER_VAR to something that is not a variable name"
+		assert_line "  🔧 How to fix:"
+		assert_line "    • Set LAYER_VAR to the variable build_context exports for this layer (SIGNING_LAYER, DISTRIBUTION_LAYER or GATE_LAYER)"
+		refute_line "setup executed for distribution/firebase"
+	done
 }
 
 @test "Should fail with the full troubleshooting block when the layer variable has no value" {

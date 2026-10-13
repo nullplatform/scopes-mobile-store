@@ -54,7 +54,20 @@ case "$*" in
     esac
     ;;
   *"asset list"*) answer "${NP_MOCK_ASSET_LIST:-}" ;;
-  *"deployment list"*) answer "${NP_MOCK_DEPLOYMENT_LIST:-}" ;;
+  *"deployment list"*)
+    # Like the real CLI (v2.10.1), an unknown flag (e.g. --scope_id) is an error.
+    for arg in "$@"; do
+      case "$arg" in
+        --*)
+          case "$arg" in
+            --scope-id|--application-id|--status-in-scope|--limit|--offset|--all|--max-pages|--include-messages|--format|--query) ;;
+            *) echo "{\"error\": \"unknown flag: $arg\"}"; exit 1 ;;
+          esac
+          ;;
+      esac
+    done
+    answer "${NP_MOCK_DEPLOYMENT_LIST:-}"
+    ;;
   *"release read"*) answer "${NP_MOCK_RELEASE_READ:-}" ;;
   *)
     echo "{\"error\": \"unexpected command: np $*\"}"
