@@ -41,6 +41,10 @@ setup() {
 
 teardown() {
 	rm -rf "$TEST_TMP_DIR"
+	# A test that must create something outside its tmpdir names it here.
+	if [ -n "${EXTRA_CLEANUP_DIR:-}" ]; then
+		rm -rf "$EXTRA_CLEANUP_DIR"
+	fi
 }
 
 run_build_context() {
@@ -92,12 +96,23 @@ with_context() {
 
 	assert_equal "$PREVIOUS_DEPLOYMENT_ID" "70"
 	assert_equal "$PREVIOUS_RELEASE_SEMVER" "0.9.0"
+	assert_np_called "np deployment list --scope-id 7 --all --max-pages 5 --format json"
+	assert_np_called "np release read --id 60 --format json"
 
+	assert_equal "$WORKDIR_BASE" "$TEST_TMP_DIR/work"
 	assert_equal "$WORKDIR" "$TEST_TMP_DIR/work/77"
 	assert_directory_exists "$WORKDIR"
 
 	# The asset in the context already matches android-uat: no listing needed.
 	refute_np_called "asset list"
+}
+
+@test "Should keep the same workdir when sourced twice in the same session" {
+	run_build_context
+	run_build_context
+
+	assert_equal "$WORKDIR_BASE" "$TEST_TMP_DIR/work"
+	assert_equal "$WORKDIR" "$TEST_TMP_DIR/work/77"
 }
 
 @test "Should print a readable summary without dumping the scope configuration" {
@@ -107,7 +122,7 @@ with_context() {
 	assert_line "🔍 Building deployment context..."
 	assert_line "   📋 Scope: mobile/sample/store (id 7) | Dimension: uat | Deployment: 77 | Release: 1.0.0"
 	assert_line "   📋 Platforms: android | Channel: internal | Rollout: 5%"
-	assert_line "   📋 Scope configuration: resolved from the platform (nrn organization=1:account=2:namespace=3)"
+	assert_line "   📋 Scope configuration: resolved from the platform (nrn organization=1:account=2:namespace=3:application=442353687)"
 	assert_line "   ✅ signing_layer=prebuilt"
 	assert_line "   ✅ distribution_layer=firebase"
 	assert_line "   ✅ gate_layer=none"
@@ -219,16 +234,31 @@ with_context() {
 	assert_equal "$ASSET_URL" "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk"
 }
 
-@test "Should take the expected asset type from the asset of the context" {
-	with_context '.asset.type = "mobile-binary" | .asset.name = "android-prod"'
-	with_context '.scope.dimensions.environment = "prod"'
-	# The listed android-prod is a bundle, so it must not match a mobile-binary scope.
+@test "Should filter the listed assets by the type of the asset in the context" {
+	with_context '.asset.type = "mobile-binary" | .scope.dimensions.environment = "prod"'
+	# The build lists an android-prod of type bundle: it must not match a mobile-binary scope.
 
 	run source "$SCRIPT"
 
-	assert_equal "$status" "0"
+	assert_equal "$status" "1"
 	assert_line "📡 Resolving build assets (type mobile-binary, build 10)..."
-	assert_line "   ✅ android: android-prod -> s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk (release 1.0.0, build 10)"
+	assert_line "   ❌ No asset named 'android-prod' of type 'mobile-binary' in release 1.0.0"
+	assert_line "    • Make the CI register an asset named 'android-prod' (type mobile-binary) for this build"
+	assert_np_called "np asset list --build-id 10 --format json"
+}
+
+@test "Should fail before listing assets when the release has no build id" {
+	with_context 'del(.asset) | del(.release.build_id)'
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ The release has no build id"
+	assert_line "  💡 Possible causes:"
+	assert_line "    • The context carries no asset and the release is not linked to a build"
+	assert_line "  🔧 How to fix:"
+	assert_line "    • Create the release from a build whose CI registered the mobile binaries as assets"
+	refute_np_called "asset list"
 }
 
 @test "Should resolve the same context when the asset carries no metadata (the platform does not persist it)" {
@@ -329,11 +359,13 @@ with_context() {
 # Scope configuration resolution: platform > context > environment variables
 # =============================================================================
 @test "Should resolve the mobile-store configuration closest to the scope and put it back in the context" {
+	# provider_list.json lists account, namespace and application level providers out of
+	# order (plus a static-files one): the deepest NRN must win, not the last element.
 	run_build_context
 
-	assert_equal "$(echo "$SCOPE_CONFIGURATION" | jq -r .marker)" "namespace-level"
+	assert_equal "$(echo "$SCOPE_CONFIGURATION" | jq -r .marker)" "application-level"
 	assert_equal "$(echo "$SCOPE_CONFIGURATION" | jq -r .firebase.project)" "np-mobile-poc"
-	assert_equal "$(echo "$CONTEXT" | jq -r '.providers["scope-configurations"].marker')" "namespace-level"
+	assert_equal "$(echo "$CONTEXT" | jq -r '.providers["scope-configurations"].marker')" "application-level"
 	assert_np_called "np provider list --nrn organization=1:account=2:namespace=3:application=442353687:scope=7 --categories scope-configurations --show-ascendants --dimensions environment:uat --format json"
 }
 
@@ -344,10 +376,60 @@ with_context() {
 
 	assert_equal "$status" "0"
 	assert_line "   📋 Scope configuration: taken from the context"
+	refute_line "   ⚠️ Could not resolve the Mobile store scope configuration from the platform; trusting the context, which may belong to another scope type"
 	run_build_context
 	assert_equal "$(echo "$SCOPE_CONFIGURATION" | jq -r .marker)" "from-context"
 	assert_equal "$SIGNING_LAYER" "prebuilt"
 	assert_equal "$ASSETS_BUCKET" "assets-aws-mobile"
+}
+
+@test "Should warn and trust the context when np is not available" {
+	# Only the system directories: no np mock, no real np (jq still resolves).
+	export PATH="/usr/bin:/bin"
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "0"
+	assert_line "   ⚠️ Could not resolve the Mobile store scope configuration from the platform; trusting the context, which may belong to another scope type"
+	assert_line "   📋 Scope configuration: taken from the context"
+	assert_line "   ✅ assets_bucket=assets-aws-mobile (region us-east-1)"
+	assert_line "   ⚠️ Could not list the deployments of scope 7; continuing without a previous deployment"
+	assert_line "✨ Build context ready"
+}
+
+@test "Should warn and trust the context when the provider listing returns an error" {
+	unset NP_MOCK_PROVIDER_LIST
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "0"
+	assert_line "   ⚠️ Could not resolve the Mobile store scope configuration from the platform; trusting the context, which may belong to another scope type"
+	assert_line "   📋 Scope configuration: taken from the context"
+	run_build_context
+	assert_equal "$(echo "$SCOPE_CONFIGURATION" | jq -r .marker)" "from-context"
+}
+
+@test "Should warn and trust the context when the mobile-store specification does not exist" {
+	export NP_MOCK_SPECIFICATION_LIST="$MOCKS_DIR/scope_configuration/provider_list_empty.json"
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "0"
+	assert_line "   ⚠️ Could not resolve the Mobile store scope configuration from the platform; trusting the context, which may belong to another scope type"
+	assert_line "   📋 Scope configuration: taken from the context"
+	refute_np_called "np provider list"
+}
+
+@test "Should treat a context configuration without signing_layer as missing when the lookup fails" {
+	unset NP_MOCK_PROVIDER_LIST
+	with_context '.providers["scope-configurations"] = {"cloud_provider": "aws", "distribution": {"aws_distribution": "cloudfront"}, "gate_layer": "none"}'
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ⚠️ Could not resolve the Mobile store scope configuration from the platform; trusting the context, which may belong to another scope type"
+	assert_line "   📋 Scope configuration: taken from environment variables"
+	assert_line "   ❌ Scope configuration is incomplete: missing signing_layer, distribution_layer, gate_layer, assets.bucket"
 }
 
 @test "Should fall back to environment variables when there is no scope configuration at all" {
@@ -409,7 +491,31 @@ with_context() {
 # =============================================================================
 # Previous deployment
 # =============================================================================
-@test "Should leave the previous deployment empty when the scope was never deployed successfully" {
+@test "Should prefer the finalized deployment still active in the scope over a more recent inactive one" {
+	# deployment_list.json: 73 finalized/inactive is newer than 70 finalized/active.
+	run source "$SCRIPT"
+	assert_equal "$status" "0"
+	assert_line "   📋 Previous deployment: 70 (release 0.9.0)"
+
+	run_build_context
+	assert_equal "$PREVIOUS_DEPLOYMENT_ID" "70"
+	assert_equal "$PREVIOUS_RELEASE_SEMVER" "0.9.0"
+	assert_np_called "np deployment list --scope-id 7"
+	assert_np_called "np release read --id 60"
+}
+
+@test "Should pick the most recent finalized deployment when none is active in the scope" {
+	export NP_MOCK_DEPLOYMENT_LIST="$MOCKS_DIR/deployment_list_no_active.json"
+
+	run_build_context
+
+	assert_equal "$PREVIOUS_DEPLOYMENT_ID" "69"
+	assert_equal "$PREVIOUS_RELEASE_SEMVER" "0.9.0"
+	assert_np_called "np deployment list --scope-id 7"
+	assert_np_called "np release read --id 58"
+}
+
+@test "Should leave the previous deployment empty when only failed or rolled back deployments exist" {
 	export NP_MOCK_DEPLOYMENT_LIST="$MOCKS_DIR/deployment_list_no_previous.json"
 
 	run source "$SCRIPT"
@@ -419,6 +525,8 @@ with_context() {
 	run_build_context
 	assert_empty "$PREVIOUS_DEPLOYMENT_ID" "PREVIOUS_DEPLOYMENT_ID"
 	assert_empty "$PREVIOUS_RELEASE_SEMVER" "PREVIOUS_RELEASE_SEMVER"
+	assert_np_called "np deployment list --scope-id 7"
+	refute_np_called "release read"
 }
 
 @test "Should not fail when the deployment listing fails" {
@@ -447,13 +555,15 @@ with_context() {
 # Workdir and input validation
 # =============================================================================
 @test "Should default the workdir to /tmp/mobile-store/<deployment id>" {
-	unset WORKDIR
+	unset WORKDIR WORKDIR_BASE
+	# The default lives outside the test tmpdir: teardown removes it however the test ends.
+	EXTRA_CLEANUP_DIR="/tmp/mobile-store/77"
 
 	run_build_context
 
+	assert_equal "$WORKDIR_BASE" "/tmp/mobile-store"
 	assert_equal "$WORKDIR" "/tmp/mobile-store/77"
 	assert_directory_exists "$WORKDIR"
-	rm -rf "/tmp/mobile-store/77"
 }
 
 @test "Should fail when CONTEXT is missing or not JSON" {
@@ -486,6 +596,8 @@ with_context() {
 	assert_line "    • The context was not produced by the platform (CONTEXT was edited or built by hand)"
 	assert_line "  🔧 How to fix:"
 	assert_line "    • Run this script from a workflow executed with np service workflow exec --build-context"
+	refute_np_called "provider"
+	refute_np_called "deployment list"
 }
 
 @test "Should reject a scope id that is not an integer" {
@@ -499,6 +611,8 @@ with_context() {
 	assert_line "    • The context was not produced by the platform (CONTEXT was edited or built by hand)"
 	assert_line "  🔧 How to fix:"
 	assert_line "    • Run this script from a workflow executed with np service workflow exec --build-context"
+	refute_np_called "provider"
+	refute_np_called "deployment list"
 }
 
 @test "Should reject a dimension with path characters" {

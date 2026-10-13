@@ -23,8 +23,10 @@
 #   ASSET_VERSION        = RELEASE_SEMVER (asset metadata is not persisted)
 #   ASSET_BUILD_NUMBER   = .asset.build_id (unique, increasing build id)
 #   ANDROID_PACKAGE, IOS_BUNDLE_ID   from SCOPE_CONFIGURATION.android/.ios, empty when unset
-#   PREVIOUS_DEPLOYMENT_ID, PREVIOUS_RELEASE_SEMVER  last successful deployment
-#   WORKDIR              $WORKDIR/<deployment id>, created
+#   PREVIOUS_DEPLOYMENT_ID, PREVIOUS_RELEASE_SEMVER  finalized deployment still
+#                        active in the scope, else the most recent finalized one
+#   WORKDIR_BASE         $WORKDIR as configured (values.yaml), kept for re-runs
+#   WORKDIR              $WORKDIR_BASE/<deployment id>, created
 #   CONTEXT              with .providers["scope-configurations"] replaced by ours
 #
 # Secrets never reach the log: the scope configuration only carries secret
@@ -148,46 +150,66 @@ echo "   📋 Platforms: $PLATFORMS | Channel: $CHANNEL | Rollout: $ROLLOUT_PERC
 # the context carries a single one: whichever resolves closest in the NRN
 # hierarchy, which can belong to another scope type. Ask the platform for the
 # 'mobile-store' configuration by its specification, deepest NRN wins, matching
-# the scope's own dimensions. Without np (or when it finds nothing) trust the
-# context, and as a last resort the environment variables.
+# the scope's own dimensions. When the lookup itself fails (no np, an error,
+# no 'mobile-store' specification) trust the context, warning that it may be
+# another scope type's, and as a last resort use the environment variables.
 # =============================================================================
+# Sets resolved_configuration ({nrn, attributes} or empty).
+# Returns 0 when found, 1 when the platform has no configuration, 2 when the
+# lookup itself failed.
 resolve_scope_configuration() {
-	local nrn spec_id dims
+	local nrn specifications spec_id dims listing
+	resolved_configuration=""
 	nrn=$(ctx '.scope.nrn // empty')
-	[ -n "$nrn" ] || return 1
+	[ -n "$nrn" ] || return 2
 
-	spec_id=$(np provider specification list --nrn "$nrn" --format json 2>/dev/null |
-		jq -r '[.results[]? | select(.slug == "mobile-store")] | first | .id // empty' 2>/dev/null) || return 1
-	[ -n "$spec_id" ] || return 1
+	specifications=$(np provider specification list --nrn "$nrn" --format json 2>/dev/null) || return 2
+	spec_id=$(echo "$specifications" | jq -r '[.results[]? | select(.slug == "mobile-store")] | first | .id // empty' 2>/dev/null) || return 2
+	[ -n "$spec_id" ] || return 2
 
 	dims=$(ctx '.scope.dimensions // {} | to_entries | map("\(.key):\(.value)") | join(",")')
 	local -a dims_args=()
 	[ -n "$dims" ] && dims_args=(--dimensions "$dims")
 
-	np provider list --nrn "$nrn" --categories scope-configurations --show-ascendants \
-		${dims_args[@]+"${dims_args[@]}"} --format json 2>/dev/null |
-		jq -c --arg spec "$spec_id" '
-			[.results[]? | select(.specification_id == $spec)]
-			| sort_by(.nrn | split(":") | length)
-			| last
-			| select(. != null)
-			| {nrn: .nrn, attributes: (.attributes // {})}
-		' 2>/dev/null
+	listing=$(np provider list --nrn "$nrn" --categories scope-configurations --show-ascendants \
+		${dims_args[@]+"${dims_args[@]}"} --format json 2>/dev/null) || return 2
+	echo "$listing" | jq -e 'type == "object" and has("results")' >/dev/null 2>&1 || return 2
+
+	resolved_configuration=$(echo "$listing" | jq -c --arg spec "$spec_id" '
+		[.results[]? | select(.specification_id == $spec)]
+		| sort_by(.nrn | split(":") | length)
+		| last
+		| select(. != null)
+		| {nrn: .nrn, attributes: (.attributes // {})}
+	' 2>/dev/null) || return 2
+	[ -n "$resolved_configuration" ] || return 1
+	return 0
 }
 
 scope_configuration_source=""
-resolved_configuration=$(resolve_scope_configuration || true)
-if [ -n "$resolved_configuration" ]; then
+resolved_configuration=""
+lookup_status=0
+resolve_scope_configuration || lookup_status=$?
+if [ "$lookup_status" -eq 0 ]; then
 	SCOPE_CONFIGURATION=$(echo "$resolved_configuration" | jq -c .attributes)
 	scope_configuration_source="resolved from the platform (nrn $(echo "$resolved_configuration" | jq -r .nrn))"
 	CONTEXT=$(echo "$CONTEXT" | jq -c --argjson configuration "$SCOPE_CONFIGURATION" \
 		'.providers["scope-configurations"] = $configuration')
-elif [ "$(ctx '.providers["scope-configurations"] | type')" = "object" ]; then
-	SCOPE_CONFIGURATION=$(ctx -c '.providers["scope-configurations"]')
-	scope_configuration_source="taken from the context"
 else
-	SCOPE_CONFIGURATION=""
-	scope_configuration_source="taken from environment variables"
+	if [ "$lookup_status" -eq 2 ]; then
+		echo "   ⚠️ Could not resolve the Mobile store scope configuration from the platform; trusting the context, which may belong to another scope type"
+	fi
+	# Only a configuration that looks like ours (it has signing_layer) is
+	# trusted; anything else is treated as missing so partial fields of another
+	# scope type never leak into the layer variables.
+	if [ "$(ctx '.providers["scope-configurations"] | type == "object" and has("signing_layer")')" = "true" ]; then
+		SCOPE_CONFIGURATION=$(ctx -c '.providers["scope-configurations"]')
+		scope_configuration_source="taken from the context"
+	else
+		CONTEXT=$(echo "$CONTEXT" | jq -c 'del(.providers["scope-configurations"])')
+		SCOPE_CONFIGURATION=""
+		scope_configuration_source="taken from environment variables"
+	fi
 fi
 echo "   📋 Scope configuration: $scope_configuration_source"
 
@@ -260,6 +282,17 @@ ASSET_TYPE=$(ctx '.asset.type // .scope.capabilities.asset_type // "bundle"')
 build_id=$(ctx '.asset.build_id // .release.build_id // empty')
 context_asset=$(ctx -c '.asset // {}')
 
+if [ -z "$build_id" ]; then
+	{
+		echo "   ❌ The release has no build id"
+		echo "  💡 Possible causes:"
+		echo "    • The context carries no asset and the release is not linked to a build"
+		echo "  🔧 How to fix:"
+		echo "    • Create the release from a build whose CI registered the mobile binaries as assets"
+	} >&2
+	exit 1
+fi
+
 echo "📡 Resolving build assets (type $ASSET_TYPE, build $build_id)..."
 
 list_build_assets() {
@@ -271,9 +304,6 @@ list_build_assets() {
 listed_assets=""
 ASSETS_JSON='{}'
 for platform in $PLATFORMS; do
-	# PLATFORMS only holds android/ios (see the case above); keep the guard so
-	# the asset name never carries anything else into paths.
-	[[ "$platform" =~ ^[a-z0-9-]+$ ]] || fail_invalid_context_value "platform" "$platform" "only lowercase letters, digits and dashes are allowed"
 	expected_name="$platform-$DIMENSION"
 	asset=$(echo "$context_asset" | jq -c --arg name "$expected_name" --arg type "$ASSET_TYPE" \
 		'select(.name == $name and .type == $type) // empty')
@@ -318,18 +348,21 @@ ANDROID_PACKAGE=$(echo "$SCOPE_CONFIGURATION" | jq -r '.android.package // empty
 IOS_BUNDLE_ID=$(echo "$SCOPE_CONFIGURATION" | jq -r '.ios.bundle_id // empty')
 
 # =============================================================================
-# Previous deployment: the last successful one of this scope, other than the
-# current. Empty when there is none or when the lookup fails (not an error).
+# Previous deployment: among the finalized deployments of this scope other
+# than the current one, the one still active in the scope (where a rollback
+# returns to); otherwise the most recent finalized one. Empty when there is
+# none or when the lookup fails (not an error).
 # =============================================================================
 PREVIOUS_DEPLOYMENT_ID=""
 PREVIOUS_RELEASE_SEMVER=""
 previous_deployment=""
-if deployments=$(np deployment list --scope-id "$SCOPE_ID" --limit 200 --format json 2>/dev/null) &&
+if deployments=$(np deployment list --scope-id "$SCOPE_ID" --all --max-pages 5 --format json 2>/dev/null) &&
 	previous_deployment=$(echo "$deployments" | jq -ec --arg current "$DEPLOYMENT_ID" '
 		(if type == "array" then . elif type == "object" and has("results") then .results else error("unexpected deployment listing") end)
-		| map(select(.status == "successful" and (.id | tostring) != $current))
-		| sort_by(.created_at // "", .id)
-		| last // ""
+		| map(select(.status == "finalized" and (.id | tostring) != $current))
+		| (map(select(.status_in_scope == "active")) | first)
+			// (sort_by(.created_at // "", .id) | last)
+			// ""
 	' 2>/dev/null); then
 	:
 else
@@ -350,9 +383,11 @@ fi
 
 # =============================================================================
 # Workdir: scratch directory of this deployment (binaries are downloaded and
-# signed here). WORKDIR comes from values.yaml.
+# signed here). WORKDIR comes from values.yaml; the base is kept apart so that
+# sourcing this script twice in the same session does not nest the path.
 # =============================================================================
-WORKDIR="${WORKDIR:-/tmp/mobile-store}/$DEPLOYMENT_ID"
+WORKDIR_BASE="${WORKDIR_BASE:-${WORKDIR:-/tmp/mobile-store}}"
+WORKDIR="$WORKDIR_BASE/$DEPLOYMENT_ID"
 mkdir -p "$WORKDIR"
 echo "   📋 Workdir: $WORKDIR"
 
@@ -364,4 +399,4 @@ export RELEASE_SEMVER DEPLOYMENT_ID SCOPE_ID APPLICATION_SLUG NAMESPACE_SLUG SCO
 export SIGNING_LAYER DISTRIBUTION_LAYER GATE_LAYER ASSETS_BUCKET ASSETS_REGION SCOPE_CONFIGURATION
 export ASSET_TYPE ASSETS_JSON ASSET_URL ASSET_VERSION ASSET_BUILD_NUMBER ANDROID_PACKAGE IOS_BUNDLE_ID
 export PREVIOUS_DEPLOYMENT_ID PREVIOUS_RELEASE_SEMVER
-export WORKDIR
+export WORKDIR_BASE WORKDIR
