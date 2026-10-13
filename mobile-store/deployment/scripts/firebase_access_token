@@ -1,0 +1,83 @@
+#!/bin/bash
+# =============================================================================
+# Google access token for the Firebase service account
+#
+# Prints an OAuth2 access token (scope cloud-platform) for the service
+# account JSON in GOOGLE_APPLICATION_CREDENTIALS. The worker image has no
+# gcloud, so the token is obtained by hand: a JWT (RS256, signed with
+# openssl using the private key of the service account) exchanged at the
+# token endpoint of the account (token_uri, default
+# https://oauth2.googleapis.com/token).
+#
+# FIREBASE_ACCESS_TOKEN, when set, is printed as is (tests and local runs).
+# Nothing of the key is ever printed; the key only lives in a mode-600 temp
+# file for the signature.
+# =============================================================================
+
+set -euo pipefail
+
+if [ -n "${FIREBASE_ACCESS_TOKEN:-}" ]; then
+	echo "$FIREBASE_ACCESS_TOKEN"
+	exit 0
+fi
+
+SCOPE="https://www.googleapis.com/auth/cloud-platform"
+TOKEN_LIFETIME_SECONDS=3600
+
+if [ -z "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then
+	{
+		echo "   ❌ GOOGLE_APPLICATION_CREDENTIALS is not set"
+		echo "  💡 Possible causes:"
+		echo "    • The distribution/firebase layer setup did not run before this step"
+		echo "  🔧 How to fix:"
+		echo "    • Run the workflow from the start so the Firebase layer writes the service account"
+	} >&2
+	exit 1
+fi
+
+if ! client_email=$(jq -er 'select(type == "object" and (.client_email | type == "string") and (.private_key | type == "string")) | .client_email' \
+	"$GOOGLE_APPLICATION_CREDENTIALS" 2>/dev/null); then
+	echo "   ❌ $GOOGLE_APPLICATION_CREDENTIALS is not a Google service account JSON (client_email and private_key are required)" >&2
+	exit 1
+fi
+token_uri=$(jq -r '.token_uri // "https://oauth2.googleapis.com/token"' "$GOOGLE_APPLICATION_CREDENTIALS")
+
+base64url() {
+	base64 | tr -d '\n=' | tr '+/' '-_'
+}
+
+key_file=$(mktemp)
+trap 'rm -f "$key_file"' EXIT
+chmod 600 "$key_file"
+jq -r '.private_key' "$GOOGLE_APPLICATION_CREDENTIALS" > "$key_file"
+
+now=$(date +%s)
+header=$(printf '{"alg":"RS256","typ":"JWT"}' | base64url)
+claims=$(jq -nc --arg iss "$client_email" --arg scope "$SCOPE" --arg aud "$token_uri" \
+	--argjson iat "$now" --argjson exp "$((now + TOKEN_LIFETIME_SECONDS))" \
+	'{iss: $iss, scope: $scope, aud: $aud, iat: $iat, exp: $exp}' | base64url)
+signature=$(printf '%s.%s' "$header" "$claims" | openssl dgst -sha256 -sign "$key_file" | base64url)
+assertion="$header.$claims.$signature"
+
+if ! response=$(curl -fsS -X POST "$token_uri" \
+	--data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer" \
+	--data-urlencode "assertion=$assertion" 2>&1); then
+	{
+		echo "   ❌ Could not obtain a Google access token for $client_email"
+		echo "$response" | sed 's/^/      /'
+		echo "  💡 Possible causes:"
+		echo "    • The service account key was deleted or the service account was disabled"
+		echo "    • The worker clock is off by more than a few minutes"
+		echo "  🔧 How to fix:"
+		echo "    • Create a new key for the service account and update the credentials secret"
+	} >&2
+	exit 1
+fi
+
+access_token=$(echo "$response" | jq -r '.access_token // empty' 2>/dev/null || true)
+if [ -z "$access_token" ]; then
+	echo "   ❌ The token endpoint $token_uri answered without an access_token" >&2
+	exit 1
+fi
+
+echo "$access_token"

@@ -1,0 +1,90 @@
+#!/bin/bash
+# =============================================================================
+# Firebase App Distribution: list releases
+#
+# Lists the latest releases of the Firebase app of every platform of the
+# scope through the App Distribution REST API and prints JSON only (stdout is
+# the contract of instance/list; logs and errors go to stderr):
+#
+#   {"results": [{
+#     "platform": "android",
+#     "app_id": "1:123:android:abc",
+#     "release": "projects/123/apps/1:123:android:abc/releases/0abcdef",   (API .name)
+#     "version": "1.0.0",                   (API .displayVersion)
+#     "build": "10",                        (API .buildVersion)
+#     "created_at": "2025-12-22T18:30:00Z", (API .createTime)
+#     "release_notes": "...",               (API .releaseNotes.text, null when absent)
+#     "console_url": "https://console.firebase.google.com/...",   (API .firebaseConsoleUri)
+#     "testing_url": "https://appdistribution.firebase.google.com/..." (API .testingUri)
+#   }]}
+#
+# The API wants the project NUMBER in the path; it is the second segment of
+# every Firebase app id (1:<project number>:<platform>:<hash>). The access
+# token comes from scripts/firebase_access_token (service account in
+# GOOGLE_APPLICATION_CREDENTIALS, or FIREBASE_ACCESS_TOKEN when set).
+# On failure the output is {"results": []} and the exit code 1.
+# =============================================================================
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOYMENT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PAGE_SIZE="${FIREBASE_RELEASES_PAGE_SIZE:-20}"
+
+fail() {
+	echo '{"results": []}'
+	exit 1
+}
+
+for platform in ${PLATFORMS:-}; do
+	var="FIREBASE_APP_ID_$(echo "$platform" | tr '[:lower:]' '[:upper:]')"
+	if [ -z "${!var:-}" ]; then
+		{
+			echo "   ❌ $var is not set"
+			echo "  💡 Possible causes:"
+			echo "    • The distribution/firebase layer setup did not run before this step"
+			echo "  🔧 How to fix:"
+			echo "    • Run the workflow from the start so the Firebase layer is configured first"
+		} >&2
+		fail
+	fi
+done
+
+if ! token=$("$DEPLOYMENT_DIR/scripts/firebase_access_token"); then
+	fail
+fi
+
+results='[]'
+for platform in ${PLATFORMS:-}; do
+	var="FIREBASE_APP_ID_$(echo "$platform" | tr '[:lower:]' '[:upper:]')"
+	app_id="${!var}"
+	project_number=$(echo "$app_id" | cut -d: -f2)
+	url="https://firebaseappdistribution.googleapis.com/v1/projects/$project_number/apps/$app_id/releases?pageSize=$PAGE_SIZE"
+
+	if ! response=$(curl -fsS -H "Authorization: Bearer $token" "$url"); then
+		{
+			echo "   ❌ Could not list the releases of the $platform app $app_id"
+			echo "  💡 Possible causes:"
+			echo "    • The service account lacks the Firebase App Distribution Viewer role on project '${FIREBASE_PROJECT:-<project>}'"
+			echo "    • The app id is wrong"
+			echo "  🔧 How to fix:"
+			echo "    • Check firebase.app_id_$platform and the roles of the service account in the Firebase console"
+		} >&2
+		fail
+	fi
+
+	results=$(echo "$response" | jq -c --argjson results "$results" --arg platform "$platform" --arg app_id "$app_id" '
+		$results + [(.releases // [])[] | {
+			platform: $platform,
+			app_id: $app_id,
+			release: .name,
+			version: .displayVersion,
+			build: .buildVersion,
+			created_at: .createTime,
+			release_notes: (.releaseNotes.text // null),
+			console_url: .firebaseConsoleUri,
+			testing_url: .testingUri
+		}]')
+done
+
+jq -nc --argjson results "$results" '{results: $results}'

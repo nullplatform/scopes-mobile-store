@@ -19,6 +19,12 @@ service/                scope and deployment handlers (map an action to its work
 mobile-store/
   scope/workflows/      create, update, delete
   deployment/workflows/ initial, blue_green, switch_traffic, finalize, rollback, delete
+  deployment/scripts/   build_context, layer_executor, do_publish and the helpers the layers share
+  deployment/platform/  android, ios: download and validate the binary of the release
+  deployment/signing/   prebuilt (CI-signed), keyvault (apksigner with a keystore from the secrets manager)
+  deployment/distribution/ firebase: setup, publish, rollback (re-distributes the previous release), list_releases
+  deployment/gate/      none: no external approval
+  deployment/tests/     BATS tests of every script and layer, with the CLI mocks (np, aws, firebase, apksigner, curl)
   scripts/              the steps the workflows run (example is a placeholder)
   specs/                service-spec, scope-type-definition, notification-channel and actions/*.json.tpl
   values.yaml           operator configuration for the workflows

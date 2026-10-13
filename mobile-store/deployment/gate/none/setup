@@ -1,0 +1,14 @@
+#!/bin/bash
+# =============================================================================
+# Gate layer: none
+#
+# The deployment needs no external approval (no store review): the layer only
+# exports GATE_RESULT=approved so the workflow can finish right away.
+#
+# Sourced by the workflow: returns 1 on failure, never exits.
+# =============================================================================
+
+echo "🔍 Gate layer 'none'"
+echo "   ✅ No external approval required for channel '${CHANNEL:-internal}'"
+GATE_RESULT="approved"
+export GATE_RESULT
