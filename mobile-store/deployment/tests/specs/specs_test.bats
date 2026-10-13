@@ -47,7 +47,7 @@ render() {
 	assert_equal "$(echo "$spec" | jq -r .name)" "Mobile store"
 	assert_equal "$(echo "$spec" | jq -r .selectors.sub_category)" "Mobile store"
 	assert_equal "$(echo "$spec" | jq -r .type)" "scope"
-	assert_equal "$(echo "$spec" | jq -c '.attributes.schema.properties.asset_type | {type, default, export}')" '{"type":"string","default":"mobile-binary","export":false}'
+	assert_equal "$(echo "$spec" | jq -c '.attributes.schema.properties.asset_type | {type, default, export}')" '{"type":"string","default":"bundle","export":false}'
 	assert_greater_than "$(echo "$spec" | jq '.available_actions | length')" "0" "available_actions"
 	for action in $(echo "$spec" | jq -r '.available_actions[]'); do
 		assert_file_exists "$SPECS_DIR/actions/$action.json.tpl"

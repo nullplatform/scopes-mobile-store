@@ -32,9 +32,9 @@
       "properties": {
         "asset_type": {
           "type": "string",
-          "default": "mobile-binary",
+          "default": "bundle",
           "export": false,
-          "description": "Asset type this scope deploys: the CI registers mobile binaries with type mobile-binary"
+          "description": "Asset type this scope deploys. Mobile binaries are registered as bundle assets because the asset API only accepts the platform's built-in types; switch to a mobile-specific type once nullplatform adds one"
         },
         "platform": {
           "type": "string",
