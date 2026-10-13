@@ -4,18 +4,32 @@
 #
 # Reads CONTEXT (the deployment context JSON the agent passes with
 # --build-context) and exports everything the later steps of the deployment
-# workflows need. The script is sourced by the workflow, so the exports stay
-# in the session; the workflow lists them under `output:` for documentation.
+# workflows need. np service workflow exec sources every step in one bash -c,
+# joined by &&, so the exports stay in the session; the `output:` the workflow
+# lists is informative only (the engine ignores it).
 #
 # BUILD_CONTEXT_MODE (step configuration):
 #   deployment  (default) the deployment workflows: deployment id required,
 #               build assets and previous deployment resolved.
+#   rollback    the rollback workflow: deployment id required and PREVIOUS_*
+#               resolved, but the assets of the current release are not (a
+#               rollback must work even when that build has no usable assets).
 #   scope       the scope and instance workflows: no deployment, release or
 #               asset in the context. Only the scope, its capabilities and the
 #               scope configuration are resolved; ASSETS_JSON is {}, ASSET_URL,
-#               ASSET_BUILD_NUMBER and PREVIOUS_* are empty, and WORKDIR is
+#               ASSET_BUILD_NUMBER and PREVIOUS_* are empty. WORKDIR is
 #               $WORKDIR_BASE/<deployment id> when the context still carries
-#               one (switch_traffic, finalize), else $WORKDIR_BASE/scope-<scope id>.
+#               one (switch_traffic, finalize), else a fresh directory
+#               $WORKDIR_BASE/scope-<scope id>-XXXXXX per run (two concurrent
+#               instance:data requests never share credentials). When SCOPE_ID
+#               is already set (the entrypoint exports the requested scope), the
+#               scope of the context must be that one.
+#
+# BUILD_CONTEXT_REQUIRE (step configuration):
+#   all           (default) signing_layer, distribution_layer, gate_layer and
+#                 assets.bucket must resolve.
+#   distribution  only distribution_layer and assets.bucket (instance:data
+#                 only lists releases; it never signs nor gates).
 #
 # Exports:
 #   DIMENSION            .scope.dimensions.environment, "default" when absent
@@ -64,18 +78,33 @@ ctx() {
 
 BUILD_CONTEXT_MODE="${BUILD_CONTEXT_MODE:-deployment}"
 case "$BUILD_CONTEXT_MODE" in
-	deployment | scope) ;;
+	deployment | rollback | scope) ;;
 	*)
 		{
-			echo "   ❌ Unknown BUILD_CONTEXT_MODE '$BUILD_CONTEXT_MODE': expected deployment or scope"
+			echo "   ❌ Unknown BUILD_CONTEXT_MODE '$BUILD_CONTEXT_MODE': expected deployment, rollback or scope"
 			echo "  💡 Possible causes:"
 			echo "    • The workflow step that runs build_context sets configuration.BUILD_CONTEXT_MODE to an unexpected value"
 			echo "  🔧 How to fix:"
-			echo "    • Set BUILD_CONTEXT_MODE to scope (scope and instance workflows) or leave it unset (deployment workflows)"
+			echo "    • Set BUILD_CONTEXT_MODE to scope (scope and instance workflows), rollback (rollback workflow) or leave it unset (deployment workflows)"
 		} >&2
 		exit 1
 		;;
 esac
+BUILD_CONTEXT_REQUIRE="${BUILD_CONTEXT_REQUIRE:-all}"
+case "$BUILD_CONTEXT_REQUIRE" in
+	all | distribution) ;;
+	*)
+		{
+			echo "   ❌ Unknown BUILD_CONTEXT_REQUIRE '$BUILD_CONTEXT_REQUIRE': expected all or distribution"
+			echo "  💡 Possible causes:"
+			echo "    • The workflow step that runs build_context sets configuration.BUILD_CONTEXT_REQUIRE to an unexpected value"
+			echo "  🔧 How to fix:"
+			echo "    • Set BUILD_CONTEXT_REQUIRE to distribution (instance workflow) or leave it unset"
+		} >&2
+		exit 1
+		;;
+esac
+requested_scope_id="${SCOPE_ID:-}"
 
 echo "🔍 Building $BUILD_CONTEXT_MODE context..."
 
@@ -104,10 +133,20 @@ fail_invalid_context_value() {
 	exit 1
 }
 
-if [ "$BUILD_CONTEXT_MODE" = "deployment" ] || [ -n "$DEPLOYMENT_ID" ]; then
+if [ "$BUILD_CONTEXT_MODE" != "scope" ] || [ -n "$DEPLOYMENT_ID" ]; then
 	[[ "$DEPLOYMENT_ID" =~ ^[0-9]+$ ]] || fail_invalid_context_value "deployment id" "$DEPLOYMENT_ID" "must be an integer"
 fi
 [[ "$SCOPE_ID" =~ ^[0-9]+$ ]] || fail_invalid_context_value "scope id" "$SCOPE_ID" "must be an integer"
+if [ "$BUILD_CONTEXT_MODE" = "scope" ] && [ -n "$requested_scope_id" ] && [ "$requested_scope_id" != "$SCOPE_ID" ]; then
+	{
+		echo "   ❌ The context belongs to scope $SCOPE_ID, not to the requested scope $requested_scope_id"
+		echo "  💡 Possible causes:"
+		echo "    • build-context resolved a different scope than the one the notification asks about"
+		echo "  🔧 How to fix:"
+		echo "    • Run the workflow with np service workflow exec --build-context and .notification.parameters.scope_id set to the requested scope"
+	} >&2
+	exit 1
+fi
 if ! [[ "$DIMENSION" =~ ^[a-z0-9-]+$ ]]; then
 	{
 		echo "   ❌ Invalid dimension '$DIMENSION': only lowercase letters, digits and dashes are allowed"
@@ -251,9 +290,13 @@ ASSETS_BUCKET=$(get_config_value --provider '.providers["scope-configurations"].
 ASSETS_REGION=$(get_config_value --provider '.providers["scope-configurations"].assets.region' --env ASSETS_REGION --default "us-east-1")
 
 missing_fields=""
-[ -n "$SIGNING_LAYER" ] || missing_fields="$missing_fields, signing_layer"
+if [ "$BUILD_CONTEXT_REQUIRE" = "all" ]; then
+	[ -n "$SIGNING_LAYER" ] || missing_fields="$missing_fields, signing_layer"
+fi
 [ -n "$DISTRIBUTION_LAYER" ] || missing_fields="$missing_fields, distribution_layer"
-[ -n "$GATE_LAYER" ] || missing_fields="$missing_fields, gate_layer"
+if [ "$BUILD_CONTEXT_REQUIRE" = "all" ]; then
+	[ -n "$GATE_LAYER" ] || missing_fields="$missing_fields, gate_layer"
+fi
 [ -n "$ASSETS_BUCKET" ] || missing_fields="$missing_fields, assets.bucket"
 if [ -n "$missing_fields" ]; then
 	{
@@ -312,14 +355,12 @@ IOS_BUNDLE_ID=$(echo "$SCOPE_CONFIGURATION" | jq -r '.ios.bundle_id // empty')
 
 ASSET_TYPE=$(ctx '.asset.type // .scope.capabilities.asset_type // "bundle"')
 
-if [ "$BUILD_CONTEXT_MODE" = "scope" ]; then
+if [ "$BUILD_CONTEXT_MODE" != "deployment" ]; then
 	ASSETS_JSON='{}'
 	ASSET_URL=""
 	ASSET_VERSION="$RELEASE_SEMVER"
 	ASSET_BUILD_NUMBER=""
-	PREVIOUS_DEPLOYMENT_ID=""
-	PREVIOUS_RELEASE_SEMVER=""
-	echo "   📋 Assets and previous deployment: skipped (scope mode)"
+	echo "   📋 Assets of the current release: skipped ($BUILD_CONTEXT_MODE mode)"
 else
 	# =============================================================================
 	# Build assets: one binary per platform, named <platform>-<dimension>
@@ -391,7 +432,13 @@ else
 	ASSET_URL=$(echo "$ASSETS_JSON" | jq -r --arg platform "$first_platform" '.[$platform].url // empty')
 	ASSET_VERSION="$RELEASE_SEMVER"
 	ASSET_BUILD_NUMBER="$build_id"
+fi
 
+if [ "$BUILD_CONTEXT_MODE" = "scope" ]; then
+	PREVIOUS_DEPLOYMENT_ID=""
+	PREVIOUS_RELEASE_SEMVER=""
+	echo "   📋 Previous deployment: skipped (scope mode)"
+else
 	# =============================================================================
 	# Previous deployment: among the finalized deployments of this scope other
 	# than the current one, the one still active in the scope (where a rollback
@@ -433,8 +480,13 @@ fi
 # sourcing this script twice in the same session does not nest the path.
 # =============================================================================
 WORKDIR_BASE="${WORKDIR_BASE:-${WORKDIR:-/tmp/mobile-store}}"
-WORKDIR="$WORKDIR_BASE/${DEPLOYMENT_ID:-scope-$SCOPE_ID}"
-mkdir -p "$WORKDIR"
+if [ -n "$DEPLOYMENT_ID" ]; then
+	WORKDIR="$WORKDIR_BASE/$DEPLOYMENT_ID"
+	mkdir -p "$WORKDIR"
+else
+	mkdir -p "$WORKDIR_BASE"
+	WORKDIR=$(mktemp -d "$WORKDIR_BASE/scope-$SCOPE_ID-XXXXXX")
+fi
 echo "   📋 Workdir: $WORKDIR"
 
 echo "✨ Build context ready"
@@ -445,4 +497,4 @@ export RELEASE_SEMVER DEPLOYMENT_ID SCOPE_ID APPLICATION_SLUG NAMESPACE_SLUG SCO
 export SIGNING_LAYER DISTRIBUTION_LAYER GATE_LAYER ASSETS_BUCKET ASSETS_REGION SCOPE_CONFIGURATION
 export ASSET_TYPE ASSETS_JSON ASSET_URL ASSET_VERSION ASSET_BUILD_NUMBER ANDROID_PACKAGE IOS_BUNDLE_ID
 export PREVIOUS_DEPLOYMENT_ID PREVIOUS_RELEASE_SEMVER
-export WORKDIR_BASE WORKDIR BUILD_CONTEXT_MODE
+export WORKDIR_BASE WORKDIR

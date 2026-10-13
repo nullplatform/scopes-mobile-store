@@ -21,6 +21,7 @@ steps:
     file: "$SERVICE_PATH/deployment/scripts/build_context"
     configuration:
       BUILD_CONTEXT_MODE: scope
+      BUILD_CONTEXT_REQUIRE: distribution
     output:
       - name: CONTEXT
         type: environment
@@ -31,6 +32,8 @@ steps:
       - name: ASSETS_REGION
         type: environment
       - name: SCOPE_CONFIGURATION
+        type: environment
+      - name: WORKDIR_BASE
         type: environment
       - name: WORKDIR
         type: environment

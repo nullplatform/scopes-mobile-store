@@ -1,5 +1,7 @@
 # rollback-deployment: distribute the previous release again through the
 # distribution layer (Firebase cannot unpublish), signed by the signing layer.
+# build_context runs in rollback mode: the previous deployment is resolved, the
+# assets of the release being rolled back are not (they may be what is broken).
 include:
   - "$SERVICE_PATH/values.yaml"
 steps:
@@ -16,6 +18,8 @@ steps:
   - name: build context
     type: script
     file: "$SERVICE_PATH/deployment/scripts/build_context"
+    configuration:
+      BUILD_CONTEXT_MODE: rollback
     output:
       - name: CONTEXT
         type: environment

@@ -180,3 +180,18 @@ list||"
 	assert_equal "$output" ""
 	grep -q 'list_releases' "$SCOPE_DIR/instance/scripts/list"
 }
+
+@test "Should run build_context in rollback mode for rollbacks and with distribution-only requirements for instances" {
+	run python3 -c '
+import sys
+sys.path.insert(0, sys.argv[1])
+import workflow_lint
+for path in ("deployment/workflows/rollback.yaml", "instance/workflows/list.yaml"):
+    steps, _ = workflow_lint.load(sys.argv[2] + "/" + path, sys.argv[2])
+    c = [s for s in steps if s["name"] == "build context"][0].get("configuration") or {}
+    print("%s %s %s" % (path, c.get("BUILD_CONTEXT_MODE", ""), c.get("BUILD_CONTEXT_REQUIRE", "all")))
+' "$TEST_DIR" "$SCOPE_DIR"
+
+	assert_equal "$output" "deployment/workflows/rollback.yaml rollback all
+instance/workflows/list.yaml scope distribution"
+}
