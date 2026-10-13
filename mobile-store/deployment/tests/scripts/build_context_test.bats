@@ -36,7 +36,7 @@ setup() {
 	export NP_MOCK_DEPLOYMENT_LIST="$MOCKS_DIR/deployment_list.json"
 	export NP_MOCK_RELEASE_READ="$MOCKS_DIR/release_read.json"
 
-	unset SIGNING_LAYER DISTRIBUTION_LAYER GATE_LAYER ASSETS_BUCKET ASSETS_REGION
+	unset SIGNING_LAYER DISTRIBUTION_LAYER GATE_LAYER ASSETS_BUCKET ASSETS_REGION BUILD_CONTEXT_MODE WORKDIR_BASE
 }
 
 teardown() {
@@ -688,4 +688,104 @@ with_context() {
 	run_build_context
 	assert_json_equal "$(echo "$CONTEXT" | jq -c '.providers["scope-configurations"]')" \
 		'{"signing_layer":"prebuilt","distribution_layer":"firebase","gate_layer":"none","assets":{"bucket":"assets-aws-mobile","region":"us-east-1"}}'
+}
+
+# =============================================================================
+# Scope mode (BUILD_CONTEXT_MODE=scope): the scope and instance workflows have
+# no deployment, release or asset; only the scope configuration is resolved.
+# =============================================================================
+scope_context() {
+	CONTEXT=$(echo "$CONTEXT" | jq -c 'del(.deployment, .release, .asset)')
+	export CONTEXT
+	export BUILD_CONTEXT_MODE="scope"
+}
+
+@test "Should resolve the scope configuration without release, asset or deployments in scope mode" {
+	scope_context
+
+	run_build_context
+
+	assert_equal "$DIMENSION" "uat"
+	assert_equal "$PLATFORMS" "android"
+	assert_equal "$CHANNEL" "internal"
+	assert_equal "$SCOPE_ID" "7"
+	assert_empty "$DEPLOYMENT_ID" "DEPLOYMENT_ID"
+	assert_empty "$RELEASE_SEMVER" "RELEASE_SEMVER"
+	assert_equal "$SIGNING_LAYER" "prebuilt"
+	assert_equal "$DISTRIBUTION_LAYER" "firebase"
+	assert_equal "$GATE_LAYER" "none"
+	assert_equal "$ASSETS_BUCKET" "assets-aws-mobile"
+	assert_equal "$ASSET_TYPE" "bundle"
+	assert_equal "$ASSETS_JSON" "{}"
+	assert_empty "$ASSET_URL" "ASSET_URL"
+	assert_empty "$ASSET_BUILD_NUMBER" "ASSET_BUILD_NUMBER"
+	assert_equal "$ANDROID_PACKAGE" "ar.io.nullplatform.sample"
+	assert_empty "$PREVIOUS_DEPLOYMENT_ID" "PREVIOUS_DEPLOYMENT_ID"
+	assert_empty "$PREVIOUS_RELEASE_SEMVER" "PREVIOUS_RELEASE_SEMVER"
+	assert_equal "$WORKDIR" "$TEST_TMP_DIR/work/scope-7"
+	assert_directory_exists "$WORKDIR"
+
+	refute_np_called "asset list"
+	refute_np_called "deployment list"
+	refute_np_called "release read"
+}
+
+@test "Should print the scope mode summary" {
+	scope_context
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "0"
+	assert_line "🔍 Building scope context..."
+	assert_line "   📋 Scope: mobile/sample/store (id 7) | Dimension: uat"
+	assert_line "   📋 Platforms: android | Channel: internal | Rollout: 5%"
+	assert_line "   ✅ distribution_layer=firebase"
+	assert_line "   📋 Assets and previous deployment: skipped (scope mode)"
+	assert_line "   📋 Workdir: $TEST_TMP_DIR/work/scope-7"
+	assert_line "✨ Build context ready"
+	refute_line "📡 Resolving build assets (type bundle, build 10)..."
+}
+
+@test "Should keep the deployment id and workdir in scope mode when the context has a deployment" {
+	export BUILD_CONTEXT_MODE="scope"
+
+	run_build_context
+
+	assert_equal "$DEPLOYMENT_ID" "77"
+	assert_equal "$RELEASE_SEMVER" "1.0.0"
+	assert_equal "$WORKDIR" "$TEST_TMP_DIR/work/77"
+	assert_equal "$ASSETS_JSON" "{}"
+	refute_np_called "deployment list"
+}
+
+@test "Should still validate a deployment id present in scope mode" {
+	export BUILD_CONTEXT_MODE="scope"
+	with_context '.deployment.id = "../etc"'
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Invalid deployment id '../etc': must be an integer"
+}
+
+@test "Should fail on an unknown BUILD_CONTEXT_MODE" {
+	export BUILD_CONTEXT_MODE="instance"
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Unknown BUILD_CONTEXT_MODE 'instance': expected deployment or scope"
+	assert_line "  💡 Possible causes:"
+	assert_line "    • The workflow step that runs build_context sets configuration.BUILD_CONTEXT_MODE to an unexpected value"
+	assert_line "  🔧 How to fix:"
+	assert_line "    • Set BUILD_CONTEXT_MODE to scope (scope and instance workflows) or leave it unset (deployment workflows)"
+}
+
+@test "Should still require a deployment in the default mode" {
+	with_context 'del(.deployment)'
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Invalid deployment id '': must be an integer"
 }

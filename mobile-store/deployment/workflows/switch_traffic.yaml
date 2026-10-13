@@ -1,6 +1,27 @@
+# switch-traffic: Firebase App Distribution has no staged rollout, so nothing
+# moves; the state is recorded on the deployment. Public stores fail until their
+# distribution layer exists.
 include:
   - "$SERVICE_PATH/values.yaml"
 steps:
-  - name: example
+  - name: build context
     type: script
-    file: "$SERVICE_PATH/scripts/example"
+    file: "$SERVICE_PATH/deployment/scripts/build_context"
+    configuration:
+      BUILD_CONTEXT_MODE: scope
+    output:
+      - name: CONTEXT
+        type: environment
+      - name: CHANNEL
+        type: environment
+      - name: RELEASE_SEMVER
+        type: environment
+      - name: DEPLOYMENT_ID
+        type: environment
+      - name: DISTRIBUTION_LAYER
+        type: environment
+  - name: record rollout state
+    type: script
+    file: "$SERVICE_PATH/deployment/scripts/record_rollout_state"
+    configuration:
+      ROLLOUT_ACTION: switch_traffic

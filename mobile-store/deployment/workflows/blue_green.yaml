@@ -1,6 +1,11 @@
+# start-blue-green: the initial workflow, refused while another deployment of
+# the scope is still rolling out. Firebase App Distribution has no traffic
+# split: the release reaches the whole group, as in initial.
 include:
   - "$SERVICE_PATH/values.yaml"
+  - "$SERVICE_PATH/deployment/workflows/initial.yaml"
 steps:
-  - name: example
+  - name: check active rollout
     type: script
-    file: "$SERVICE_PATH/scripts/example"
+    file: "$SERVICE_PATH/deployment/scripts/check_active_rollout"
+    before: assume role

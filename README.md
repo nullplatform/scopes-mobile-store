@@ -15,17 +15,20 @@ Design and work plan: `docs/superpowers/plans/` in `voltmx-poc` and the ledger i
 
 ```
 entrypoint              agent calls it; routes deployment actions to service/deployment, the rest to service/scope
-service/                scope and deployment handlers (map an action to its workflow) and the shared runner
+service/                scope, deployment and instance handlers (map an action to its workflow) and the shared runner
 mobile-store/
-  scope/workflows/      create, update, delete
+  scope/workflows/      create, update (check the scope configuration and its layers), delete (no-op)
   deployment/workflows/ initial, blue_green, switch_traffic, finalize, rollback, delete
-  deployment/scripts/   build_context, layer_executor, do_publish and the helpers the layers share
+  instance/workflows/   list: answers instance:data with the releases of the distribution channel
+  deployment/scripts/   build_context, run_platforms, layer_executor, do_publish, do_rollback,
+                        check_active_rollout, record_rollout_state, delete_deployment and shared helpers
   deployment/platform/  android, ios: download and validate the binary of the release
   deployment/signing/   prebuilt (CI-signed), keyvault (apksigner with a keystore from the secrets manager)
   deployment/distribution/ firebase: setup, publish, rollback (re-distributes the previous release), list_releases
   deployment/gate/      none: no external approval
   deployment/tests/     BATS tests of every script and layer, with the CLI mocks (np, aws, firebase, apksigner, curl)
-  scripts/              the steps the workflows run (example is a placeholder)
+  utils/                assume_role_step: assumes the scope IAM role (identity-access-control provider, selector mobile-store)
+  scripts/              no_op (delete-scope)
   specs/                service-spec, scope-type-definition, notification-channel and actions/*.json.tpl
   values.yaml           operator configuration for the workflows
 Dockerfile              worker image on the shared worker-bridge base
@@ -42,7 +45,9 @@ mise.toml               run it on your machine as a package (`np package run`)
 
 A new action needs its `specs/actions/<slug>.json.tpl`, its slug in `available_actions`, and the workflow. Every `--overrides-path` directory can hold `<entity>/workflows/<action>.yaml` to layer steps on top of the base workflow.
 
-Logs, metrics, instances and parameters are not implemented: `log:read`, `metric:*` and `instance:data` answer empty results, and `parameter:*` fails. To serve one, add `<slug>/<entity>/workflows/` and route it in `entrypoint` (see the `k8s` scope in [nullplatform/scopes](https://github.com/nullplatform/scopes)); their steps must print only JSON.
+`instance:data` runs `instance/workflows/list.yaml` (`service/instance/entrypoint`): it lists the releases of the distribution channel and prints only JSON (its first step sends every log to stderr). Logs, metrics and parameters are not implemented: `log:read` and `metric:*` answer empty results, and `parameter:*` fails. To serve one, add `<slug>/<entity>/workflows/` and route it in `entrypoint` (see the `k8s` scope in [nullplatform/scopes](https://github.com/nullplatform/scopes)); their steps must print only JSON.
+
+The engine (`np service workflow exec`) sources every step of a workflow in one bash session, joined by `&&`: what a step exports reaches the next steps, the first step that fails stops the workflow, and a step's `configuration` only applies to that step. Steps still list what they export under `output:` as the explicit hand-off; `deployment/tests/workflows/` checks that every variable a step consumes is declared by an earlier one. Keep step `configuration` values to one word (older CLIs splice them unquoted).
 
 ## Register the scope
 

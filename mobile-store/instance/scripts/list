@@ -1,0 +1,27 @@
+#!/bin/bash
+# =============================================================================
+# Last step of the instance workflow: answer instance:data
+#
+# Runs deployment/distribution/$DISTRIBUTION_LAYER/list_releases (it prints
+# {"results": [...]} and deletes the layer credentials when it ends) with its
+# stdout on fd 3, the stdout reserve_stdout kept for the answer (or on stdout
+# when run on its own). A layer without list_releases answers no instances.
+#
+# Inputs: DISTRIBUTION_LAYER, SERVICE_PATH, plus what list_releases needs
+# (the distribution layer setup ran in the previous step).
+# =============================================================================
+
+mobile_store_instance_list() {
+	local layer="${DISTRIBUTION_LAYER:-}" list_script answer_fd="${MOBILE_STORE_ANSWER_FD:-1}"
+
+	list_script="$SERVICE_PATH/deployment/distribution/$layer/list_releases"
+	if ! [[ "$layer" =~ ^[a-z0-9-]+$ ]] || [ ! -x "$list_script" ]; then
+		echo "   ⚠️ The distribution layer '$layer' cannot list releases; answering no instances" >&2
+		echo '{"results":[]}' >&"$answer_fd"
+		return 0
+	fi
+
+	"$list_script" >&"$answer_fd"
+}
+
+mobile_store_instance_list

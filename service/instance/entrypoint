@@ -1,0 +1,24 @@
+#!/bin/bash
+# Answers instance:data with instance/workflows/list.yaml. stdout is the JSON answer only.
+set -euo pipefail
+
+# build-context reads the scope from .notification.parameters.scope_id; telemetry
+# requests carry it in .arguments, sometimes as a one-element array.
+scope_id=$(echo "$CONTEXT" | jq -r '
+  [.parameters.scope_id, .tags.scope_id, (.arguments.scope_id | if type == "array" then .[0] else . end)]
+  | map(select(. != null and . != "") | tostring) | first // empty')
+if ! [[ "$scope_id" =~ ^[0-9]+$ ]]; then
+  echo "instance:data without a scope id; answering no instances" >&2
+  echo '{"results":[]}'
+  exit 0
+fi
+
+NP_ACTION_CONTEXT=$(echo "$NP_ACTION_CONTEXT" | jq -c --arg scope_id "$scope_id" '.notification.parameters.scope_id = $scope_id')
+SCOPE_ID="$scope_id"
+export NP_ACTION_CONTEXT SCOPE_ID
+
+# shellcheck source=service/workflow
+source "$WORKING_DIRECTORY/service/workflow"
+workflow_overrides instance list
+np service workflow exec --no-output --build-context --no-params \
+  --workflow "$SERVICE_PATH/instance/workflows/list.yaml" ${WORKFLOW_OVERRIDES[@]+"${WORKFLOW_OVERRIDES[@]}"}
