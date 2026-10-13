@@ -14,7 +14,8 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../scripts/validators"
 
 echo "🔍 Gate layer 'none'"
-GATE_LAYER="${GATE_LAYER:-none}" validate_gate_for_channel || return 1
+# This layer IS the none gate, whatever GATE_LAYER says.
+GATE_LAYER=none validate_gate_for_channel || return 1
 echo "   ✅ No external approval required for channel '${CHANNEL:-internal}'"
 GATE_RESULT="approved"
 export GATE_RESULT

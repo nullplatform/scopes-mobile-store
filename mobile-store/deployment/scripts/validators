@@ -16,10 +16,11 @@
 #   validate_firebase_project <project>
 #   validate_firebase_app_id <platform> <app id>
 #   validate_gate_for_channel
-#       Authorization policy of the approval gate: CHANNEL=production with
-#       GATE_LAYER=none is refused on public stores (app-store, google-play)
-#       and only warned about on private distributions (firebase,
-#       foundry-eas, intune). Unknown distributions are refused.
+#       Authorization policy of the approval gate, fail closed: production
+#       on a public store (app-store, google-play) needs GATE_LAYER to be
+#       exactly store-review; on a private distribution (firebase,
+#       foundry-eas, intune) gate none is allowed with a warning. Unknown
+#       channels, gates and distributions are refused.
 #
 # The validators above are security checks and never depend on the channel
 # or the gate: every layer calls them unconditionally.
@@ -118,8 +119,21 @@ validate_firebase_app_id() {
 validate_gate_for_channel() {
 	local channel="${CHANNEL:-}" gate="${GATE_LAYER:-}" distribution="${DISTRIBUTION_LAYER:-}"
 
-	[ "$channel" = "production" ] || return 0
-	[ "$gate" = "none" ] || return 0
+	# Fail closed: every branch that does not end in an explicit allow refuses.
+	case "$channel" in
+		internal | testers) return 0 ;;
+		production) ;;
+		*)
+			{
+				echo "   ❌ Unknown channel '${channel:-(not set)}': cannot apply the approval gate policy"
+				echo "  💡 Possible causes:"
+				echo "    • build_context did not run before this step, or the scope has an unsupported channel"
+				echo "  🔧 How to fix:"
+				echo "    • Run the deployment workflow from the start; the channel must be internal, testers or production"
+			} >&2
+			return 1
+			;;
+	esac
 
 	if [ -z "$distribution" ]; then
 		{
@@ -134,11 +148,13 @@ validate_gate_for_channel() {
 
 	case "$distribution" in
 		app-store | google-play)
+			[ "$gate" = "store-review" ] && return 0
 			{
 				echo "   ❌ Publishing to production on a public store requires gate_layer=store-review"
-				echo "   📋 Channel: $channel | Distribution: $distribution | Gate: $gate"
+				echo "   📋 Channel: $channel | Distribution: $distribution | Gate: ${gate:-(not set)}"
 				echo "  💡 Possible causes:"
 				echo "    • The 'Mobile store' scope configuration sets gate_layer to none for a scope that publishes to $distribution"
+				echo "    • gate_layer is not set or is misspelled (it must be exactly store-review)"
 				echo "  🔧 How to fix:"
 				echo "    • Set gate_layer to store-review in the scope configuration of this namespace or dimension"
 				echo "    • Or use the internal or testers channel, which do not reach the public store"
@@ -146,9 +162,22 @@ validate_gate_for_channel() {
 			return 1
 			;;
 		firebase | foundry-eas | intune)
-			echo "   ⚠️ Publishing to production without an external approval gate"
-			echo "   📋 Channel: $channel | Distribution: $distribution | Gate: $gate (testers get the build as soon as it is uploaded)"
-			return 0
+			case "$gate" in
+				store-review) return 0 ;;
+				none)
+					echo "   ⚠️ Publishing to production without an external approval gate"
+					echo "   📋 Channel: $channel | Distribution: $distribution | Gate: $gate (testers get the build as soon as it is uploaded)"
+					return 0
+					;;
+			esac
+			{
+				echo "   ❌ Unknown gate layer '${gate:-(not set)}' for channel '$channel'"
+				echo "  💡 Possible causes:"
+				echo "    • gate_layer is not set or is misspelled in the 'Mobile store' scope configuration"
+				echo "  🔧 How to fix:"
+				echo "    • Set gate_layer in the 'Mobile store' scope configuration to none or store-review"
+			} >&2
+			return 1
 			;;
 		*)
 			{
