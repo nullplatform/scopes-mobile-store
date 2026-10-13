@@ -111,8 +111,8 @@ setup_layer_test() {
 	export ASSETS_BUCKET="assets-aws-mobile"
 	export ASSETS_REGION="us-east-1"
 	export ASSET_TYPE="bundle"
-	export ASSET_NAME="android-uat"
-	export ASSETS_JSON='{"android":{"url":"s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk","asset_id":6,"build_id":10,"name":"android-uat"}}'
+	export ASSET_NAME="android"
+	export ASSETS_JSON='{"android":{"url":"s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk","asset_id":6,"build_id":10,"name":"android"}}'
 	export ANDROID_PACKAGE="ar.io.nullplatform.sample"
 	export IOS_BUNDLE_ID=""
 	export PREVIOUS_DEPLOYMENT_ID="70"

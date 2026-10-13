@@ -35,7 +35,7 @@ without_asset_name() {
 	run bash "$SCRIPT"
 
 	assert_equal "$status" "0"
-	assert_line "   ✅ Asset name: android-uat (set in the scope)"
+	assert_line "   ✅ Asset name: android (set in the scope)"
 	refute_np_called "scope patch"
 }
 
@@ -64,13 +64,13 @@ without_asset_name() {
 
 @test "Should keep the asset name the scope has even when the context does not carry it" {
 	CONTEXT=$(echo "$CONTEXT" | jq -c 'del(.scope.asset_name)')
-	echo '{"id": 7, "asset_name": "android-production"}' > "$TEST_TMP_DIR/scope_read.json"
+	echo '{"id": 7, "asset_name": "android-internal"}' > "$TEST_TMP_DIR/scope_read.json"
 	export NP_MOCK_SCOPE_READ="$TEST_TMP_DIR/scope_read.json"
 
 	run bash "$SCRIPT"
 
 	assert_equal "$status" "0"
-	assert_line "   ✅ Asset name: android-production (set in the scope)"
+	assert_line "   ✅ Asset name: android-internal (set in the scope)"
 	refute_np_called "scope patch"
 }
 
@@ -93,7 +93,22 @@ without_asset_name() {
 	run bash "$SCRIPT"
 
 	assert_equal "$status" "1"
-	assert_line "   ❌ Could not read scope 7 to check its asset name"
+	assert_line "   ❌ Could not read scope '7' to resolve its asset name"
+	refute_np_called "scope patch"
+}
+
+@test "Should not patch when the scope read answers invalid or unexpected JSON" {
+	CONTEXT=$(echo "$CONTEXT" | jq -c 'del(.scope.asset_name)')
+	export NP_MOCK_SCOPE_PATCH="$TEST_TMP_DIR/scope_patch.json"
+	for answer in 'garbage' '[]' 'null' '{"results": []}' '{"id": 8, "asset_name": null}'; do
+		echo "$answer" > "$TEST_TMP_DIR/scope_read.json"
+		export NP_MOCK_SCOPE_READ="$TEST_TMP_DIR/scope_read.json"
+
+		run bash "$SCRIPT"
+
+		assert_equal "$status" "1"
+		assert_line "   ❌ Could not read scope '7' to resolve its asset name"
+	done
 	refute_np_called "scope patch"
 }
 

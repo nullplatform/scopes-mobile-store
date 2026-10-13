@@ -73,7 +73,7 @@ with_context() {
 	assert_equal "$NAMESPACE_SLUG" "mobile"
 	assert_equal "$SCOPE_SLUG" "store"
 	assert_equal "$ASSET_TYPE" "bundle"
-	assert_equal "$ASSET_NAME" "android-uat"
+	assert_equal "$ASSET_NAME" "android"
 
 	assert_equal "$SIGNING_LAYER" "prebuilt"
 	assert_equal "$DISTRIBUTION_LAYER" "firebase"
@@ -86,7 +86,7 @@ with_context() {
 		"url": "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk",
 		"asset_id": 6,
 		"build_id": 10,
-		"name": "android-uat"
+		"name": "android"
 	}
 	}'
 	assert_json_equal "$ASSETS_JSON" "$expected_assets" "ASSETS_JSON"
@@ -105,7 +105,7 @@ with_context() {
 	assert_equal "$WORKDIR" "$TEST_TMP_DIR/work/77"
 	assert_directory_exists "$WORKDIR"
 
-	# The asset in the context already matches android-uat: no listing needed.
+	# The asset in the context already matches android: no listing needed.
 	refute_np_called "asset list"
 }
 
@@ -129,9 +129,9 @@ with_context() {
 	assert_line "   ✅ distribution_layer=firebase"
 	assert_line "   ✅ gate_layer=none"
 	assert_line "   ✅ assets_bucket=assets-aws-mobile (region us-east-1)"
-	assert_line "   📋 Asset name: android-uat (from the scope)"
+	assert_line "   📋 Asset name: android (from the scope)"
 	assert_line "📡 Resolving build assets (type bundle, build 10)..."
-	assert_line "   ✅ android: android-uat -> s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk (release 1.0.0, build 10)"
+	assert_line "   ✅ android: android -> s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk (release 1.0.0, build 10)"
 	assert_line "   📋 Previous deployment: 70 (release 0.9.0)"
 	assert_line "   📋 Workdir: $TEST_TMP_DIR/work/77"
 	assert_line "✨ Build context ready"
@@ -158,13 +158,13 @@ with_context() {
 		"url": "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk",
 		"asset_id": 6,
 		"build_id": 10,
-		"name": "android-uat"
+		"name": "android"
 	},
 	"ios": {
 		"url": "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.ipa",
 		"asset_id": 12,
 		"build_id": 10,
-		"name": "ios-uat"
+		"name": "ios"
 	}
 	}'
 	assert_json_equal "$ASSETS_JSON" "$expected_assets" "ASSETS_JSON"
@@ -174,17 +174,17 @@ with_context() {
 
 @test "Should fail with the full troubleshooting block when the ios binary is missing for platform both" {
 	with_context '.scope.capabilities.platform = "both"'
-	# asset_list.json only has an ios-uat of another type: it must not be picked.
+	# asset_list.json only has an ios of another type: it must not be picked.
 
 	run source "$SCRIPT"
 
 	assert_equal "$status" "1"
-	assert_line "   ❌ No asset named 'ios-uat' of type 'bundle' in release 1.0.0"
+	assert_line "   ❌ No asset named 'ios' of type 'bundle' in release 1.0.0"
 	assert_line "  💡 Possible causes:"
-	assert_line "    • The CI did not register an asset named 'ios-uat' for this build"
+	assert_line "    • The CI did not register an asset named 'ios' for this build"
 	assert_line "    • The scope's asset name does not match the name the CI registers"
 	assert_line "  🔧 How to fix:"
-	assert_line "    • Register an asset named 'ios-uat' (type bundle) in the CI, or change the scope's asset name"
+	assert_line "    • Register an asset named 'ios' (type bundle) in the CI, or change the scope's asset name"
 }
 
 @test "Should pick the asset named by the scope even when the context carries another one" {
@@ -207,13 +207,13 @@ with_context() {
 }
 
 @test "Should not derive the asset name from the environment dimension" {
-	# The dimension says prod, the scope says android-uat: the scope wins.
+	# The dimension says prod, the scope says android: the scope wins.
 	with_context '.scope.dimensions.environment = "prod"'
 
 	run_build_context
 
 	assert_equal "$DIMENSION" "prod"
-	assert_equal "$ASSET_NAME" "android-uat"
+	assert_equal "$ASSET_NAME" "android"
 	assert_equal "$ASSET_URL" "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk"
 	refute_np_called "asset list"
 }
@@ -249,7 +249,7 @@ with_context() {
 	run_build_context
 
 	assert_equal "$DIMENSION" "default"
-	assert_equal "$ASSET_NAME" "android-uat"
+	assert_equal "$ASSET_NAME" "android"
 	assert_equal "$ASSET_URL" "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk"
 }
 
@@ -281,14 +281,36 @@ write_asset_listing() {
 
 @test "Should read the asset name from the scope when the context does not carry it" {
 	with_context 'del(.scope.asset_name)'
-	echo '{"id": 7, "asset_name": "android-uat"}' > "$TEST_TMP_DIR/scope.json"
+	echo '{"id": 7, "asset_name": "android"}' > "$TEST_TMP_DIR/scope.json"
 	export NP_MOCK_SCOPE_READ="$TEST_TMP_DIR/scope.json"
 
 	run_build_context
 
-	assert_equal "$ASSET_NAME" "android-uat"
+	assert_equal "$ASSET_NAME" "android"
 	assert_equal "$ASSET_URL" "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk"
 	assert_np_called "np scope read --id 7 --format json"
+}
+
+@test "Should fail, not guess the asset name, when the context has none and the scope cannot be read" {
+	with_context 'del(.scope.asset_name)'
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Could not read scope '7' to resolve its asset name"
+	assert_line "   📋 np scope read answered: {\"error\": \"no mock response configured for: np \"}"
+	refute_np_called "asset list"
+}
+
+@test "Should fail when the scope read answers garbage" {
+	with_context 'del(.scope.asset_name)'
+	echo 'garbage' > "$TEST_TMP_DIR/scope.json"
+	export NP_MOCK_SCOPE_READ="$TEST_TMP_DIR/scope.json"
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Could not read scope '7' to resolve its asset name"
 }
 
 @test "Should default the asset name to the platform when neither the context nor the scope has one" {
@@ -305,15 +327,15 @@ write_asset_listing() {
 }
 
 @test "Should swap the platform prefix of the asset name for ios when platform is both" {
-	with_context '.scope.capabilities.platform = "both" | .scope.asset_name = "android-production"'
-	write_asset_listing "android-production ios-production ios-uat"
+	with_context '.scope.capabilities.platform = "both" | .scope.asset_name = "android-internal"'
+	write_asset_listing "android-internal ios-internal ios"
 
 	run_build_context
 
-	assert_equal "$ASSET_NAME" "android-production"
-	assert_equal "$(echo "$ASSETS_JSON" | jq -r '.android.name')" "android-production"
-	assert_equal "$(echo "$ASSETS_JSON" | jq -r '.ios.name')" "ios-production"
-	assert_equal "$(echo "$ASSETS_JSON" | jq -r '.ios.url')" "s3://assets-aws-mobile/mobile/442353687/10/ios-production/app"
+	assert_equal "$ASSET_NAME" "android-internal"
+	assert_equal "$(echo "$ASSETS_JSON" | jq -r '.android.name')" "android-internal"
+	assert_equal "$(echo "$ASSETS_JSON" | jq -r '.ios.name')" "ios-internal"
+	assert_equal "$(echo "$ASSETS_JSON" | jq -r '.ios.url')" "s3://assets-aws-mobile/mobile/442353687/10/ios-internal/app"
 }
 
 @test "Should use ios as the ios asset when the asset name is android and platform is both" {
@@ -324,7 +346,9 @@ write_asset_listing() {
 
 	assert_equal "$ASSET_NAME" "android"
 	assert_equal "$(echo "$ASSETS_JSON" | jq -r '.ios.name')" "ios"
-	assert_equal "$ASSET_URL" "s3://assets-aws-mobile/mobile/442353687/10/android/app"
+	# android comes from the context asset; ios from the build listing.
+	assert_equal "$ASSET_URL" "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk"
+	assert_equal "$(echo "$ASSETS_JSON" | jq -r '.ios.url')" "s3://assets-aws-mobile/mobile/442353687/10/ios/app"
 }
 
 @test "Should fail explaining the convention when the ios asset name cannot be derived for platform both" {
@@ -394,7 +418,7 @@ write_asset_listing() {
 		"url": "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk",
 		"asset_id": 6,
 		"build_id": 10,
-		"name": "android-uat"
+		"name": "android"
 	}
 	}'
 	assert_json_equal "$ASSETS_JSON" "$expected_assets" "ASSETS_JSON"

@@ -21,7 +21,7 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/asset_names"
 
 mobile_store_ensure_asset_name() {
-	local scope_id primary current scope platform
+	local scope_id primary current platform
 
 	scope_id="${SCOPE_ID:-$(echo "${CONTEXT:-null}" | jq -r '.scope.id // empty' 2>/dev/null)}"
 	if ! [[ "$scope_id" =~ ^[0-9]+$ ]]; then
@@ -41,17 +41,8 @@ mobile_store_ensure_asset_name() {
 
 	current=$(echo "${CONTEXT:-null}" | jq -r '.scope.asset_name // empty' 2>/dev/null || true)
 	if [ -z "$current" ]; then
-		if ! scope=$(np scope read --id "$scope_id" --format json 2>/dev/null); then
-			{
-				echo "   ❌ Could not read scope $scope_id to check its asset name"
-				echo "  💡 Possible causes:"
-				echo "    • The nullplatform API is unavailable or the agent API key cannot read the scope"
-				echo "  🔧 How to fix:"
-				echo "    • Retry the action; if it keeps failing, check the agent API key permissions on the scope"
-			} >&2
-			return 1
-		fi
-		current=$(echo "$scope" | jq -r '.asset_name // empty' 2>/dev/null || true)
+		read_scope_asset_name "$scope_id" || return 1
+		current="$SCOPE_ASSET_NAME"
 	fi
 
 	if [ -n "$current" ]; then
