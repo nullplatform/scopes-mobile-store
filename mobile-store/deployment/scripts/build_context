@@ -1,0 +1,306 @@
+#!/bin/bash
+# =============================================================================
+# Build context
+#
+# Reads CONTEXT (the deployment context JSON the agent passes with
+# --build-context) and exports everything the later steps of the deployment
+# workflows need. The script is sourced by the workflow, so the exports stay
+# in the session; the workflow lists them under `output:` for documentation.
+#
+# Exports:
+#   DIMENSION            .scope.dimensions.environment, "default" when absent
+#   PLATFORMS            "android", "ios" or "android ios" (space separated)
+#   CHANNEL              internal | testers | production
+#   ROLLOUT_PERCENTAGE   integer 1..100
+#   RELEASE_SEMVER, DEPLOYMENT_ID, SCOPE_ID
+#   APPLICATION_SLUG, NAMESPACE_SLUG, SCOPE_SLUG
+#   SIGNING_LAYER, DISTRIBUTION_LAYER, GATE_LAYER
+#   ASSETS_BUCKET, ASSETS_REGION
+#   SCOPE_CONFIGURATION  the whole 'Mobile store' scope configuration (JSON)
+#   ASSET_TYPE           type of the binaries this scope deploys (.asset.type)
+#   ASSETS_JSON          {"<platform>": {url, version, build_number, package}}
+#   ASSET_URL, ASSET_VERSION, ASSET_BUILD_NUMBER   first platform, for convenience
+#   PREVIOUS_DEPLOYMENT_ID, PREVIOUS_RELEASE_SEMVER  last successful deployment
+#   WORKDIR              $WORKDIR/<deployment id>, created
+#   CONTEXT              with .providers["scope-configurations"] replaced by ours
+#
+# Secrets never reach the log: the scope configuration only carries secret
+# NAMES, and even so it is never dumped.
+# =============================================================================
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=mobile-store/deployment/scripts/get_config_value
+source "$SCRIPT_DIR/get_config_value"
+
+if [ -z "${CONTEXT:-}" ] || ! echo "$CONTEXT" | jq -e . >/dev/null 2>&1; then
+	{
+		echo "   ❌ CONTEXT is not set or is not valid JSON"
+		echo "  🔧 How to fix:"
+		echo "    • Run this script from a workflow executed with np service workflow exec --build-context"
+	} >&2
+	exit 1
+fi
+
+ctx() {
+	echo "$CONTEXT" | jq -r "$@"
+}
+
+echo "🔍 Building deployment context..."
+
+# =============================================================================
+# Identity
+# =============================================================================
+APPLICATION_SLUG=$(ctx '.application.slug // empty')
+NAMESPACE_SLUG=$(ctx '.namespace.slug // empty')
+SCOPE_SLUG=$(ctx '.scope.slug // empty')
+SCOPE_ID=$(ctx '.scope.id // empty')
+DEPLOYMENT_ID=$(ctx '.deployment.id // empty')
+RELEASE_SEMVER=$(ctx '.release.semver // empty')
+DIMENSION=$(ctx '.scope.dimensions.environment // "default"')
+
+echo "   📋 Scope: $NAMESPACE_SLUG/$APPLICATION_SLUG/$SCOPE_SLUG (id $SCOPE_ID) | Dimension: $DIMENSION | Deployment: $DEPLOYMENT_ID | Release: $RELEASE_SEMVER"
+
+# =============================================================================
+# Developer capabilities
+# =============================================================================
+platform=$(ctx '.scope.capabilities.platform // "android"')
+case "$platform" in
+	android) PLATFORMS="android" ;;
+	ios) PLATFORMS="ios" ;;
+	both) PLATFORMS="android ios" ;;
+	*)
+		{
+			echo "   ❌ Unsupported platform '$platform'"
+			echo "  💡 Possible causes:"
+			echo "    • The scope capability platform is not one of: android, ios, both"
+			echo "  🔧 How to fix:"
+			echo "    • Recreate the scope choosing Android, iOS or both (platform is only editable on create)"
+		} >&2
+		exit 1
+		;;
+esac
+
+CHANNEL=$(ctx '.scope.capabilities.channel // "internal"')
+case "$CHANNEL" in
+	internal | testers | production) ;;
+	*)
+		{
+			echo "   ❌ Unsupported channel '$CHANNEL'"
+			echo "  💡 Possible causes:"
+			echo "    • The scope capability channel is not one of: internal, testers, production"
+			echo "  🔧 How to fix:"
+			echo "    • Update the scope and choose one of the available distribution channels"
+		} >&2
+		exit 1
+		;;
+esac
+
+ROLLOUT_PERCENTAGE=$(ctx '.scope.capabilities.rollout_percentage // 5')
+if ! [[ "$ROLLOUT_PERCENTAGE" =~ ^[0-9]+$ ]] || [ "$ROLLOUT_PERCENTAGE" -lt 1 ] || [ "$ROLLOUT_PERCENTAGE" -gt 100 ]; then
+	{
+		echo "   ❌ rollout_percentage must be an integer between 1 and 100, got '$ROLLOUT_PERCENTAGE'"
+		echo "  💡 Possible causes:"
+		echo "    • The scope was created or updated with an invalid rollout_percentage capability"
+		echo "  🔧 How to fix:"
+		echo "    • Update the scope and set rollout_percentage to a value between 1 and 100"
+	} >&2
+	exit 1
+fi
+
+echo "   📋 Platforms: $PLATFORMS | Channel: $CHANNEL | Rollout: $ROLLOUT_PERCENTAGE%"
+
+# =============================================================================
+# Scope configuration: platform lookup > context > environment variables
+#
+# Every scope type of an account shares the scope-configurations category and
+# the context carries a single one: whichever resolves closest in the NRN
+# hierarchy, which can belong to another scope type. Ask the platform for the
+# 'mobile-store' configuration by its specification, deepest NRN wins, matching
+# the scope's own dimensions. Without np (or when it finds nothing) trust the
+# context, and as a last resort the environment variables.
+# =============================================================================
+resolve_scope_configuration() {
+	local nrn spec_id dims
+	nrn=$(ctx '.scope.nrn // empty')
+	[ -n "$nrn" ] || return 1
+
+	spec_id=$(np provider specification list --nrn "$nrn" --format json 2>/dev/null |
+		jq -r '[.results[]? | select(.slug == "mobile-store")] | first | .id // empty' 2>/dev/null) || return 1
+	[ -n "$spec_id" ] || return 1
+
+	dims=$(ctx '.scope.dimensions // {} | to_entries | map("\(.key):\(.value)") | join(",")')
+	local -a dims_args=()
+	[ -n "$dims" ] && dims_args=(--dimensions "$dims")
+
+	np provider list --nrn "$nrn" --categories scope-configurations --show-ascendants \
+		${dims_args[@]+"${dims_args[@]}"} --format json 2>/dev/null |
+		jq -c --arg spec "$spec_id" '
+			[.results[]? | select(.specification_id == $spec)]
+			| sort_by(.nrn | split(":") | length)
+			| last
+			| select(. != null)
+			| {nrn: .nrn, attributes: (.attributes // {})}
+		' 2>/dev/null
+}
+
+scope_configuration_source=""
+resolved_configuration=$(resolve_scope_configuration || true)
+if [ -n "$resolved_configuration" ]; then
+	SCOPE_CONFIGURATION=$(echo "$resolved_configuration" | jq -c .attributes)
+	scope_configuration_source="resolved from the platform (nrn $(echo "$resolved_configuration" | jq -r .nrn))"
+	CONTEXT=$(echo "$CONTEXT" | jq -c --argjson configuration "$SCOPE_CONFIGURATION" \
+		'.providers["scope-configurations"] = $configuration')
+elif [ "$(ctx '.providers["scope-configurations"] | type')" = "object" ]; then
+	SCOPE_CONFIGURATION=$(ctx -c '.providers["scope-configurations"]')
+	scope_configuration_source="taken from the context"
+else
+	SCOPE_CONFIGURATION=""
+	scope_configuration_source="taken from environment variables"
+fi
+echo "   📋 Scope configuration: $scope_configuration_source"
+
+SIGNING_LAYER=$(get_config_value --provider '.providers["scope-configurations"].signing_layer' --env SIGNING_LAYER)
+DISTRIBUTION_LAYER=$(get_config_value --provider '.providers["scope-configurations"].distribution_layer' --env DISTRIBUTION_LAYER)
+GATE_LAYER=$(get_config_value --provider '.providers["scope-configurations"].gate_layer' --env GATE_LAYER)
+ASSETS_BUCKET=$(get_config_value --provider '.providers["scope-configurations"].assets.bucket' --env ASSETS_BUCKET)
+ASSETS_REGION=$(get_config_value --provider '.providers["scope-configurations"].assets.region' --env ASSETS_REGION --default "us-east-1")
+
+missing_fields=""
+[ -n "$SIGNING_LAYER" ] || missing_fields="$missing_fields, signing_layer"
+[ -n "$DISTRIBUTION_LAYER" ] || missing_fields="$missing_fields, distribution_layer"
+[ -n "$GATE_LAYER" ] || missing_fields="$missing_fields, gate_layer"
+[ -n "$ASSETS_BUCKET" ] || missing_fields="$missing_fields, assets.bucket"
+if [ -n "$missing_fields" ]; then
+	{
+		echo "   ❌ Scope configuration is incomplete: missing ${missing_fields#, }"
+		echo "  💡 Possible causes:"
+		echo "    • No 'Mobile store' scope configuration is attached to the account, namespace or dimension of this scope"
+		echo "    • The scope configuration does not set those fields"
+		echo "  🔧 How to fix:"
+		echo "    • Create a 'Mobile store' scope configuration (category scope-configurations) for the account, namespace or dimension of this scope"
+		echo "    • Or set the SIGNING_LAYER, DISTRIBUTION_LAYER, GATE_LAYER and ASSETS_BUCKET environment variables"
+	} >&2
+	exit 1
+fi
+
+if [ -z "$SCOPE_CONFIGURATION" ]; then
+	SCOPE_CONFIGURATION=$(jq -nc \
+		--arg signing "$SIGNING_LAYER" --arg distribution "$DISTRIBUTION_LAYER" --arg gate "$GATE_LAYER" \
+		--arg bucket "$ASSETS_BUCKET" --arg region "$ASSETS_REGION" \
+		'{signing_layer: $signing, distribution_layer: $distribution, gate_layer: $gate, assets: {bucket: $bucket, region: $region}}')
+fi
+
+echo "   ✅ signing_layer=$SIGNING_LAYER"
+echo "   ✅ distribution_layer=$DISTRIBUTION_LAYER"
+echo "   ✅ gate_layer=$GATE_LAYER"
+echo "   ✅ assets_bucket=$ASSETS_BUCKET (region $ASSETS_REGION)"
+
+# =============================================================================
+# Build assets: one binary per platform, named <platform>-<dimension>
+#
+# The context carries the asset the platform matched to the scope's asset_type;
+# its type is the type every binary of this build must have. When its name is
+# not the one this platform/dimension needs, look the right one up in the build.
+# =============================================================================
+ASSET_TYPE=$(ctx '.asset.type // .scope.capabilities.asset_type // "bundle"')
+build_id=$(ctx '.asset.build_id // .release.build_id // empty')
+context_asset=$(ctx -c '.asset // {}')
+
+echo "📡 Resolving build assets (type $ASSET_TYPE, build $build_id)..."
+
+list_build_assets() {
+	local listing
+	listing=$(np asset list --build-id "$build_id" --format json 2>/dev/null) || return 1
+	echo "$listing" | jq -ec 'if type == "array" then . elif type == "object" and has("results") then .results else error("unexpected asset listing") end' 2>/dev/null
+}
+
+listed_assets=""
+ASSETS_JSON='{}'
+for platform in $PLATFORMS; do
+	expected_name="$platform-$DIMENSION"
+	asset=$(echo "$context_asset" | jq -c --arg name "$expected_name" --arg type "$ASSET_TYPE" \
+		'select(.name == $name and .type == $type) // empty')
+
+	if [ -z "$asset" ]; then
+		if [ -z "$listed_assets" ]; then
+			if ! listed_assets=$(list_build_assets); then
+				echo "   ⚠️ Could not list the assets of build $build_id (np asset list failed)"
+				listed_assets='[]'
+			fi
+		fi
+		asset=$(echo "$listed_assets" | jq -c --arg name "$expected_name" --arg type "$ASSET_TYPE" \
+			'[.[] | select(.name == $name and .type == $type)] | first // empty')
+	fi
+
+	if [ -z "$asset" ]; then
+		{
+			echo "   ❌ No asset named '$expected_name' of type '$ASSET_TYPE' in release $RELEASE_SEMVER"
+			echo "  💡 Possible causes:"
+			echo "    • The CI did not build a binary for the '$DIMENSION' environment"
+			echo "    • The asset was registered with another name"
+			echo "  🔧 How to fix:"
+			echo "    • Make the CI register an asset named '$expected_name' (type $ASSET_TYPE) for this build"
+		} >&2
+		exit 1
+	fi
+
+	ASSETS_JSON=$(echo "$ASSETS_JSON" | jq -c --arg platform "$platform" --argjson asset "$asset" \
+		'.[$platform] = {url: $asset.url, version: $asset.metadata.version, build_number: $asset.metadata.build_number, package: $asset.metadata.package}')
+	echo "   ✅ $platform: $expected_name -> $(echo "$asset" | jq -r '.url') (version $(echo "$asset" | jq -r '.metadata.version // "unknown"'), build $(echo "$asset" | jq -r '.metadata.build_number // "unknown"'))"
+done
+
+first_platform="${PLATFORMS%% *}"
+ASSET_URL=$(echo "$ASSETS_JSON" | jq -r --arg platform "$first_platform" '.[$platform].url // empty')
+ASSET_VERSION=$(echo "$ASSETS_JSON" | jq -r --arg platform "$first_platform" '.[$platform].version // empty')
+ASSET_BUILD_NUMBER=$(echo "$ASSETS_JSON" | jq -r --arg platform "$first_platform" '.[$platform].build_number // empty')
+
+# =============================================================================
+# Previous deployment: the last successful one of this scope, other than the
+# current. Empty when there is none or when the lookup fails (not an error).
+# =============================================================================
+PREVIOUS_DEPLOYMENT_ID=""
+PREVIOUS_RELEASE_SEMVER=""
+previous_deployment=""
+if deployments=$(np deployment list --scope-id "$SCOPE_ID" --limit 200 --format json 2>/dev/null) &&
+	previous_deployment=$(echo "$deployments" | jq -ec --arg current "$DEPLOYMENT_ID" '
+		(if type == "array" then . elif type == "object" and has("results") then .results else error("unexpected deployment listing") end)
+		| map(select(.status == "successful" and (.id | tostring) != $current))
+		| sort_by(.created_at // "", .id)
+		| last // ""
+	' 2>/dev/null); then
+	:
+else
+	echo "   ⚠️ Could not list the deployments of scope $SCOPE_ID; continuing without a previous deployment"
+	previous_deployment=""
+fi
+
+if [ -n "$previous_deployment" ] && [ "$previous_deployment" != '""' ]; then
+	PREVIOUS_DEPLOYMENT_ID=$(echo "$previous_deployment" | jq -r '.id')
+	previous_release_id=$(echo "$previous_deployment" | jq -r '.release_id // empty')
+	if [ -n "$previous_release_id" ]; then
+		PREVIOUS_RELEASE_SEMVER=$(np release read --id "$previous_release_id" --format json 2>/dev/null | jq -r '.semver // empty' 2>/dev/null || true)
+	fi
+	echo "   📋 Previous deployment: $PREVIOUS_DEPLOYMENT_ID (release ${PREVIOUS_RELEASE_SEMVER:-unknown})"
+else
+	echo "   📋 Previous deployment: none"
+fi
+
+# =============================================================================
+# Workdir: scratch directory of this deployment (binaries are downloaded and
+# signed here). WORKDIR comes from values.yaml.
+# =============================================================================
+WORKDIR="${WORKDIR:-/tmp/mobile-store}/$DEPLOYMENT_ID"
+mkdir -p "$WORKDIR"
+echo "   📋 Workdir: $WORKDIR"
+
+echo "✨ Build context ready"
+
+export CONTEXT
+export DIMENSION PLATFORMS CHANNEL ROLLOUT_PERCENTAGE
+export RELEASE_SEMVER DEPLOYMENT_ID SCOPE_ID APPLICATION_SLUG NAMESPACE_SLUG SCOPE_SLUG
+export SIGNING_LAYER DISTRIBUTION_LAYER GATE_LAYER ASSETS_BUCKET ASSETS_REGION SCOPE_CONFIGURATION
+export ASSET_TYPE ASSETS_JSON ASSET_URL ASSET_VERSION ASSET_BUILD_NUMBER
+export PREVIOUS_DEPLOYMENT_ID PREVIOUS_RELEASE_SEMVER
+export WORKDIR
