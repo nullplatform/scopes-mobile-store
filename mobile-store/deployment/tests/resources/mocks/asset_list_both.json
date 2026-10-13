@@ -2,33 +2,23 @@
   "results": [
     {
       "id": 6,
-      "build_id": 442353687,
+      "build_id": 10,
       "name": "android-uat",
       "type": "bundle",
       "url": "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk",
       "platform": "",
-      "metadata": {
-        "version": "1.0.0",
-        "build_number": 10,
-        "package": "ar.io.nullplatform.sample",
-        "environment": "uat"
-      },
-      "nrn": "organization=1:account=2:namespace=3:application=442353687:build=442353687:asset=6"
+      "metadata": {},
+      "nrn": "organization=1:account=2:namespace=3:application=442353687:build=10:asset=6"
     },
     {
       "id": 12,
-      "build_id": 442353687,
+      "build_id": 10,
       "name": "ios-uat",
       "type": "bundle",
       "url": "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.ipa",
       "platform": "",
-      "metadata": {
-        "version": "1.0.0",
-        "build_number": 10,
-        "package": "io.nullplatform.sample",
-        "environment": "uat"
-      },
-      "nrn": "organization=1:account=2:namespace=3:application=442353687:build=442353687:asset=12"
+      "metadata": {},
+      "nrn": "organization=1:account=2:namespace=3:application=442353687:build=10:asset=12"
     }
   ]
 }
