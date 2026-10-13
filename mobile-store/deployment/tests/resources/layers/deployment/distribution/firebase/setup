@@ -1,0 +1,4 @@
+#!/bin/bash
+# Trivial distribution/firebase layer used only by layer_executor tests; the real layers live in deployment/.
+echo "setup executed for distribution/firebase"
+exit 0
