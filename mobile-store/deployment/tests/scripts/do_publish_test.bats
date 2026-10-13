@@ -129,3 +129,56 @@ EOF
 	assert_equal "$status" "1"
 	assert_line "   ❌ Invalid distribution implementation name '../fake': only lowercase letters, digits and dashes are allowed"
 }
+
+# =============================================================================
+# Gate policy enforced before anything is distributed
+# =============================================================================
+@test "Should refuse to publish production to a public store when the gate is none" {
+	export CHANNEL="production"
+	export GATE_LAYER="none"
+	export DISTRIBUTION_LAYER="google-play"
+	mkdir -p "$SERVICE_PATH/deployment/distribution/google-play"
+	cp "$SERVICE_PATH/deployment/distribution/fake/publish" "$SERVICE_PATH/deployment/distribution/google-play/publish"
+
+	run bash "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Publishing to production on a public store requires gate_layer=store-review"
+	assert_line "   📋 Channel: production | Distribution: google-play | Gate: none"
+	assert_line "  💡 Possible causes:"
+	assert_line "    • The 'Mobile store' scope configuration sets gate_layer to none for a scope that publishes to google-play"
+	assert_line "  🔧 How to fix:"
+	assert_line "    • Set gate_layer to store-review in the scope configuration of this namespace or dimension"
+	assert_line "    • Or use the internal or testers channel, which do not reach the public store"
+	refute_line "fake publish for android"
+	refute_np_called "deployment patch"
+}
+
+@test "Should publish production to a public store when the gate is store-review" {
+	export CHANNEL="production"
+	export GATE_LAYER="store-review"
+	export DISTRIBUTION_LAYER="google-play"
+	mkdir -p "$SERVICE_PATH/deployment/distribution/google-play"
+	cp "$SERVICE_PATH/deployment/distribution/fake/publish" "$SERVICE_PATH/deployment/distribution/google-play/publish"
+
+	run bash "$SCRIPT"
+
+	assert_equal "$status" "0"
+	assert_line "fake publish for android"
+	assert_line "✨ Publish complete"
+}
+
+@test "Should publish production through firebase without a gate, with a warning" {
+	export CHANNEL="production"
+	export GATE_LAYER="none"
+	export DISTRIBUTION_LAYER="firebase"
+	mkdir -p "$SERVICE_PATH/deployment/distribution/firebase"
+	cp "$SERVICE_PATH/deployment/distribution/fake/publish" "$SERVICE_PATH/deployment/distribution/firebase/publish"
+
+	run bash "$SCRIPT"
+
+	assert_equal "$status" "0"
+	assert_line "   ⚠️ Publishing to production without an external approval gate"
+	assert_line "   📋 Channel: production | Distribution: firebase | Gate: none (testers get the build as soon as it is uploaded)"
+	assert_line "fake publish for android"
+}

@@ -15,11 +15,17 @@
 # WORKDIR is still the source of truth and the publish is not failed, since
 # the binary is already distributed.
 #
-# Inputs: DISTRIBUTION_LAYER, DEPLOYMENT_ID, CHANNEL, ROLLOUT_PERCENTAGE,
+# Before publishing, the gate policy is enforced (validate_gate_for_channel):
+# production on a public store without the store-review gate is refused.
+#
+# Inputs: DISTRIBUTION_LAYER, GATE_LAYER, DEPLOYMENT_ID, CHANNEL, ROLLOUT_PERCENTAGE,
 # WORKDIR, SERVICE_PATH, plus what the publish script needs.
 # =============================================================================
 
 set -euo pipefail
+
+# shellcheck source=mobile-store/deployment/scripts/validators
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/validators"
 
 layer="${DISTRIBUTION_LAYER:-}"
 if [ -z "$layer" ]; then
@@ -56,6 +62,10 @@ if [ ! -f "$publish_script" ]; then
 	} >&2
 	exit 1
 fi
+
+# Enforced here too: the binary must not reach a public store in production
+# without the approval gate, whatever the order of the workflow steps.
+validate_gate_for_channel || exit 1
 
 echo "📝 Publishing through the '$layer' distribution layer..."
 distribution_file="$WORKDIR/distribution.json"

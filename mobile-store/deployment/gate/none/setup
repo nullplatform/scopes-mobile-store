@@ -2,13 +2,19 @@
 # =============================================================================
 # Gate layer: none
 #
-# The deployment needs no external approval (no store review): the layer only
-# exports GATE_RESULT=approved so the workflow can finish right away.
+# The deployment needs no external approval (no store review): the layer
+# exports GATE_RESULT=approved so the workflow can finish right away, unless
+# the gate policy refuses it (production on a public store needs the
+# store-review gate; see validate_gate_for_channel in scripts/validators).
 #
 # Sourced by the workflow: returns 1 on failure, never exits.
 # =============================================================================
 
+# shellcheck source=mobile-store/deployment/scripts/validators
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../scripts/validators"
+
 echo "🔍 Gate layer 'none'"
+GATE_LAYER="${GATE_LAYER:-none}" validate_gate_for_channel || return 1
 echo "   ✅ No external approval required for channel '${CHANNEL:-internal}'"
 GATE_RESULT="approved"
 export GATE_RESULT
