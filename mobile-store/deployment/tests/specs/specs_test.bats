@@ -147,3 +147,12 @@ assert_ui_scopes_resolve() {
 	assert_greater_than "$(echo "$schema" | jq '[.uiSchema | .. | objects | .scope? // empty] | length')" "0" "scope configuration uiSchema scopes"
 	assert_ui_scopes_resolve "$schema" "$(echo "$schema" | jq .uiSchema)"
 }
+
+@test "Spec descriptions fit the platform limits" {
+	# The provider specification API answers 500 to long descriptions (seen with 285 characters)
+	local spec
+	for tpl in "$SPECS_DIR/scope-configuration.json.tpl" "$SPECS_DIR/service-spec.json.tpl" "$SPECS_DIR/scope-type-definition.json.tpl"; do
+		spec=$(render "$tpl")
+		assert_less_than "$(echo "$spec" | jq -r '.description // "" | length')" "121" "description of $(basename "$tpl")"
+	done
+}

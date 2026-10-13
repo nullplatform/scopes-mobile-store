@@ -1,6 +1,6 @@
 {
   "name": "Mobile store",
-  "description": "Configuration for mobile store scopes: which signing, distribution and gate implementations run for a namespace or dimension. The android and ios objects configure each platform that the scopes of that namespace or dimension will publish; the developer picks the platform on the scope.",
+  "description": "Signing, distribution and approval gate for mobile store scopes, per namespace or dimension",
   "category": "scope-configurations",
   "icon": "mdi:cellphone-arrow-down",
   "visible_to": [
