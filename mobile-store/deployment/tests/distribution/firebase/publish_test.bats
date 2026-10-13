@@ -146,6 +146,41 @@ teardown() {
 	[ ! -f "$FIREBASE_MOCK_LOG" ]
 }
 
+@test "Should classify the HTTP Response status the upload prints like the HTTP Error one" {
+	export FIREBASE_MOCK_FAIL="response_401"
+	run bash "$SCRIPT"
+	assert_equal "$status" "1"
+	assert_line "      Error: failed to upload release. HTTP Response: 401"
+	assert_line "    • The key of the Firebase service account expired, was deleted or was revoked"
+
+	export FIREBASE_MOCK_FAIL="response_403"
+	echo '{}' > "$GOOGLE_APPLICATION_CREDENTIALS"
+	run bash "$SCRIPT"
+	assert_equal "$status" "1"
+	assert_line "    • The Firebase service account was revoked or lacks the Firebase App Distribution Admin role"
+
+	export FIREBASE_MOCK_FAIL="response_404"
+	echo '{}' > "$GOOGLE_APPLICATION_CREDENTIALS"
+	run bash "$SCRIPT"
+	assert_equal "$status" "1"
+	assert_line "    • The app id '1:726762523137:android:a700b1fa49f91e41eb0e00' does not exist in the Firebase project 'np-mobile-pc'"
+}
+
+@test "Should fail with the full troubleshooting block when the credentials file no longer exists" {
+	rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+
+	run bash "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ The Firebase credentials file does not exist: $WORKDIR/firebase-sa.json"
+	assert_line "  💡 Possible causes:"
+	assert_line "    • The distribution layer setup did not run in this workflow"
+	assert_line "    • An earlier step already used the credentials: they are deleted when each step that uses them finishes"
+	assert_line "  🔧 How to fix:"
+	assert_line "    • Re-run the distribution layer setup right before this step; credentials are deleted when each step finishes"
+	[ ! -f "$FIREBASE_MOCK_LOG" ]
+}
+
 @test "Should fail when the Firebase layer was not set up" {
 	unset FIREBASE_PROJECT
 

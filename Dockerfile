@@ -18,12 +18,20 @@ ARG FIREBASE_CLI_VERSION=14.27.0
 # build-tools and pin it in the agent (decided in a later phase).
 USER root
 # npm is only needed to install firebase-tools: it is removed afterwards
-# (firebase runs on nodejs alone).
+# (firebase runs on nodejs alone). firebase-tools 14 needs Node.js >= 20: the
+# build fails before installing it when the base image's nodejs is older, and
+# fails at the end when the installed CLI does not start. The check runs with a
+# throwaway HOME: firebase writes ~/.config/configstore on start, and a root-owned
+# copy in the runtime user's HOME breaks every later firebase call (EACCES).
 RUN apk add --no-cache aws-cli nodejs npm openssl curl unzip \
+    && node --version \
+    && node -e 'const v = process.versions.node; if (Number(v.split(".")[0]) < 20) { console.error("firebase-tools needs Node.js >= 20, the image has " + v); process.exit(1); }' \
     && npm install -g "firebase-tools@${FIREBASE_CLI_VERSION}" \
     && npm cache clean --force \
     && apk del --no-cache npm \
-    && rm -rf /root/.npm
+    && rm -rf /root/.npm \
+    && HOME=/tmp/firebase-version-check firebase --version \
+    && rm -rf /tmp/firebase-version-check
 
 # --chown: np chmods the action script in place, so the tree must belong to the runtime uid.
 COPY --chown=10001:10001 . /app/pkg

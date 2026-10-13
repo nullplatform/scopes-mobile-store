@@ -233,14 +233,67 @@ setup_google_play() {
 
 @test "Should refuse production with an unknown gate layer on a private distribution" {
 	export CHANNEL="production"
-	export DISTRIBUTION_LAYER="fake"
+	export DISTRIBUTION_LAYER="firebase"
+	mkdir -p "$SERVICE_PATH/deployment/distribution/firebase"
+	cp "$SERVICE_PATH/deployment/distribution/fake/publish" "$SERVICE_PATH/deployment/distribution/firebase/publish"
 	export GATE_LAYER="nonee"
 	export GATE_RESULT="approved"
 
 	run bash "$SCRIPT"
 
 	assert_equal "$status" "1"
+	assert_line "   ❌ Unknown gate layer 'nonee' for channel 'production'"
+	assert_line "  💡 Possible causes:"
+	assert_line "    • gate_layer is not set or is misspelled in the 'Mobile store' scope configuration"
+	assert_line "  🔧 How to fix:"
+	assert_line "    • Set gate_layer in the 'Mobile store' scope configuration to none or store-review"
+	refute_line "fake publish for android"
+}
+
+@test "Should refuse production on an unknown distribution layer" {
+	export CHANNEL="production"
+	export GATE_LAYER="none"
+
+	run bash "$SCRIPT"
+
+	assert_equal "$status" "1"
 	assert_line "   ❌ Unknown distribution layer 'fake': cannot decide whether production needs an approval gate"
+}
+
+@test "Should record a partial distribution as an ERROR message when the publish fails halfway" {
+	cat > "$SERVICE_PATH/deployment/distribution/fake/publish" <<'SCRIPT'
+#!/bin/bash
+printf '{"provider":"fake","partial":true,"failed":["ios"],"releases":{"android":{"name":"fake/release/1"}}}' > "$WORKDIR/distribution.json"
+echo "ios upload failed" >&2
+exit 1
+SCRIPT
+
+	run bash "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ⚠️ Recorded the partial distribution on deployment 77 (message MOBILE_STORE_DISTRIBUTION_PARTIAL)"
+	refute_line "✨ Publish complete"
+	local message
+	message=$(patched_body | jq -c '.messages[0] | del(.timestamp)')
+	assert_json_equal "$message" '{
+		"level": "ERROR",
+		"code": "MOBILE_STORE_DISTRIBUTION_PARTIAL",
+		"message": "mobile-store partial distribution (the releases below stay distributed): {\"provider\":\"fake\",\"partial\":true,\"failed\":[\"ios\"],\"releases\":{\"android\":{\"name\":\"fake/release/1\"}}}"
+	}' "partial message"
+}
+
+@test "Should still fail when the partial distribution cannot be recorded" {
+	unset NP_MOCK_DEPLOYMENT_PATCH
+	cat > "$SERVICE_PATH/deployment/distribution/fake/publish" <<'SCRIPT'
+#!/bin/bash
+printf '{"provider":"fake","partial":true,"failed":["ios"],"releases":{}}' > "$WORKDIR/distribution.json"
+exit 1
+SCRIPT
+
+	run bash "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ⚠️ Could not record the partial distribution on deployment 77 (np deployment patch failed); see $WORKDIR/distribution.json"
 }
 
 @test "Should refuse an unknown channel" {

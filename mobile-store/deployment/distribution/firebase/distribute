@@ -9,8 +9,12 @@
 #
 # firebase_require_setup
 #   Fails unless the layer setup exported FIREBASE_PROJECT and the app id of
-#   every platform of the scope, and the signing layer exported
-#   SIGNED_BINARY_PATH_<PLATFORM>.
+#   every platform of the scope, the credentials file it wrote still exists,
+#   and the signing layer exported SIGNED_BINARY_PATH_<PLATFORM>.
+#
+# firebase_require_credentials_file
+#   Fails unless GOOGLE_APPLICATION_CREDENTIALS names a file that exists: the
+#   file is deleted when each step that uses it finishes.
 #
 # firebase_distribution_init [extra json object]
 #   Starts $WORKDIR/distribution.json. Firebase has no staged rollout, so the
@@ -48,6 +52,20 @@ firebase_credentials_secret() {
 	fi
 }
 
+firebase_require_credentials_file() {
+	if [ ! -f "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then
+		{
+			echo "   ❌ The Firebase credentials file does not exist: ${GOOGLE_APPLICATION_CREDENTIALS:-}"
+			echo "  💡 Possible causes:"
+			echo "    • The distribution layer setup did not run in this workflow"
+			echo "    • An earlier step already used the credentials: they are deleted when each step that uses them finishes"
+			echo "  🔧 How to fix:"
+			echo "    • Re-run the distribution layer setup right before this step; credentials are deleted when each step finishes"
+		} >&2
+		return 1
+	fi
+}
+
 firebase_require_setup() {
 	local platform platform_upper var
 	for var in FIREBASE_PROJECT GOOGLE_APPLICATION_CREDENTIALS; do
@@ -62,6 +80,7 @@ firebase_require_setup() {
 			return 1
 		fi
 	done
+	firebase_require_credentials_file || return 1
 	for platform in ${PLATFORMS:-}; do
 		platform_upper=$(echo "$platform" | tr '[:lower:]' '[:upper:]')
 		var="FIREBASE_APP_ID_$platform_upper"
@@ -145,17 +164,17 @@ firebase_distribute() {
 			echo "$output" | sed 's/^/      /'
 			echo "  💡 Possible causes:"
 			case "$output" in
-				*"HTTP Error: 401"* | *invalid_grant* | *UNAUTHENTICATED*)
+				*"HTTP Error: 401"* | *"HTTP Response: 401"* | *invalid_grant* | *UNAUTHENTICATED*)
 					echo "    • The key of the Firebase service account expired, was deleted or was revoked"
 					echo "  🔧 How to fix:"
 					echo "    • Create a new JSON key for the service account and store it in secret '$(firebase_credentials_secret)'"
 					;;
-				*"HTTP Error: 403"* | *PERMISSION_DENIED*)
+				*"HTTP Error: 403"* | *"HTTP Response: 403"* | *PERMISSION_DENIED*)
 					echo "    • The Firebase service account was revoked or lacks the Firebase App Distribution Admin role"
 					echo "  🔧 How to fix:"
 					echo "    • Grant the service account in secret '$(firebase_credentials_secret)' the Firebase App Distribution Admin role on project '$FIREBASE_PROJECT'"
 					;;
-				*"HTTP Error: 404"* | *"not found"* | *"Not found"*)
+				*"HTTP Error: 404"* | *"HTTP Response: 404"* | *"not found"* | *"Not found"*)
 					echo "    • The app id '$app_id' does not exist in the Firebase project '$FIREBASE_PROJECT'"
 					echo "  🔧 How to fix:"
 					echo "    • Copy the $platform app id from the Firebase console (Project settings > Your apps) into firebase.app_id_$platform"

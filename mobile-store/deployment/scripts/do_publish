@@ -15,6 +15,10 @@
 # WORKDIR is still the source of truth and the publish is not failed, since
 # the binary is already distributed.
 #
+# When the publish fails after distributing part of the platforms
+# (distribution.json with "partial": true), an ERROR message with code
+# MOBILE_STORE_DISTRIBUTION_PARTIAL is recorded the same way, best effort.
+#
 # Before publishing, the gate policy is enforced (validate_gate_for_channel):
 # production on a public store without the store-review gate is refused, and
 # any gate other than none must have exported GATE_RESULT=approved.
@@ -27,6 +31,8 @@ set -euo pipefail
 
 # shellcheck source=mobile-store/deployment/scripts/validators
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/validators"
+# shellcheck source=mobile-store/deployment/scripts/deployment_messages
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/deployment_messages"
 
 layer="${DISTRIBUTION_LAYER:-}"
 if [ -z "$layer" ]; then
@@ -81,7 +87,21 @@ fi
 echo "📝 Publishing through the '$layer' distribution layer..."
 distribution_file="$WORKDIR/distribution.json"
 rm -f "$distribution_file"
-bash "$publish_script"
+if ! bash "$publish_script"; then
+	# A layer that distributed some platforms before failing keeps
+	# distribution.json with "partial": true. Those releases cannot be taken
+	# back, so leave a trace on the deployment (best effort).
+	if [ -f "$distribution_file" ] && jq -e '.partial == true' "$distribution_file" >/dev/null 2>&1; then
+		partial_summary=$(jq -c . "$distribution_file")
+		if record_deployment_message ERROR MOBILE_STORE_DISTRIBUTION_PARTIAL \
+			"mobile-store partial distribution (the releases below stay distributed): $partial_summary"; then
+			echo "   ⚠️ Recorded the partial distribution on deployment $DEPLOYMENT_ID (message MOBILE_STORE_DISTRIBUTION_PARTIAL)"
+		else
+			echo "   ⚠️ Could not record the partial distribution on deployment $DEPLOYMENT_ID (np deployment patch failed); see $distribution_file"
+		fi
+	fi
+	exit 1
+fi
 
 if [ ! -f "$distribution_file" ] || ! jq -e 'type == "object" and has("provider") and has("releases")' "$distribution_file" >/dev/null 2>&1; then
 	{
@@ -100,15 +120,7 @@ summary=$(jq -c --arg channel "${CHANNEL:-internal}" --argjson rollout "${ROLLOU
 printf '%s\n' "$summary" > "$distribution_file"
 echo "   📋 Distribution summary: $summary"
 
-body=$(jq -nc --arg summary "$summary" --argjson timestamp "$(date +%s)" '{
-	messages: [{
-		level: "INFO",
-		code: "MOBILE_STORE_DISTRIBUTION",
-		message: ("mobile-store distribution: " + $summary),
-		timestamp: $timestamp
-	}]
-}')
-if np deployment patch --id "$DEPLOYMENT_ID" --body "$body" --format json >/dev/null 2>&1; then
+if record_deployment_message INFO MOBILE_STORE_DISTRIBUTION "mobile-store distribution: $summary"; then
 	echo "   ✅ Recorded the distribution on deployment $DEPLOYMENT_ID (message MOBILE_STORE_DISTRIBUTION)"
 else
 	echo "   ⚠️ Could not record the distribution on deployment $DEPLOYMENT_ID (np deployment patch failed); the summary stays in $distribution_file"

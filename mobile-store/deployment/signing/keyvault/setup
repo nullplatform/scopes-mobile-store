@@ -131,7 +131,17 @@ keyvault_keystore_password=$(echo "$keyvault_secret_json" | jq -r '.keystore_pas
 keyvault_key_password=$(echo "$keyvault_secret_json" | jq -r '.key_password')
 
 (umask 077 && mkdir -p "$WORKDIR/android")
-chmod 700 "$WORKDIR"
+if ! chmod 700 "$WORKDIR"; then
+	{
+		echo "   ❌ Could not make the workdir $WORKDIR private (chmod 700)"
+		echo "  💡 Possible causes:"
+		echo "    • The workdir belongs to another user or lives on a filesystem without permissions"
+		echo "  🔧 How to fix:"
+		echo "    • Point WORKDIR in values.yaml to a directory the worker user owns"
+	} >&2
+	keyvault_cleanup
+	return 1
+fi
 if ! (umask 077 && echo "$keyvault_secret_json" | jq -r '.keystore_base64' | base64 -d > "$keyvault_keystore") 2>/dev/null; then
 	{
 		echo "   ❌ Secret '$keyvault_secret' is not a keystore secret"

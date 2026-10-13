@@ -221,3 +221,20 @@ teardown() {
 	assert_equal "$status" "0"
 	assert_equal "$(stat -f '%Lp' "$WORKDIR" 2>/dev/null || stat -c '%a' "$WORKDIR")" "700"
 }
+
+@test "Should fail with the full troubleshooting block when the workdir cannot be made private" {
+	chmod() {
+		if [ "$1" = "700" ]; then return 1; fi
+		command chmod "$@"
+	}
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Could not make the workdir $WORKDIR private (chmod 700)"
+	assert_line "  💡 Possible causes:"
+	assert_line "    • The workdir belongs to another user or lives on a filesystem without permissions"
+	assert_line "  🔧 How to fix:"
+	assert_line "    • Point WORKDIR in values.yaml to a directory the worker user owns"
+	assert_file_not_exists "$WORKDIR/firebase-sa.json"
+}
