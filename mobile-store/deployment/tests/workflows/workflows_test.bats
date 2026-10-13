@@ -156,3 +156,27 @@ MOCK
 	done
 	assert_equal "$routed" "9"
 }
+
+@test "Should keep instance:data read-only: no publish, rollback or gate, only the distribution setup and list_releases" {
+	run python3 -c '
+import sys
+sys.path.insert(0, sys.argv[1])
+import workflow_lint
+steps, _ = workflow_lint.load(sys.argv[2] + "/instance/workflows/list.yaml", sys.argv[2])
+for s in steps:
+    c = s.get("configuration") or {}
+    print("%s|%s|%s" % (s["file"].split("/")[-1], c.get("LAYER_TYPE", ""), c.get("LAYER_CHECK", "")))
+' "$TEST_DIR" "$SCOPE_DIR"
+
+	assert_equal "$status" "0"
+	assert_equal "$output" "reserve_stdout||
+assume_role_step||
+build_context||
+layer_executor|distribution|
+list||"
+	# The only distribution scripts the instance steps can run are setup (layer_executor) and list_releases.
+	run grep -hoE 'distribution/[^"]*/(publish|rollback|distribute)|do_publish|do_rollback|gate/' \
+		"$SCOPE_DIR/instance/scripts/list" "$SCOPE_DIR/instance/scripts/reserve_stdout"
+	assert_equal "$output" ""
+	grep -q 'list_releases' "$SCOPE_DIR/instance/scripts/list"
+}

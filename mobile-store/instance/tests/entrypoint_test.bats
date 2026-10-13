@@ -106,3 +106,74 @@ run_entrypoint() {
 	assert_equal "$output" '{"results":[]}'
 	[ ! -f "$NP_MOCK_CALLS_LOG" ]
 }
+
+# =============================================================================
+# Routing hardening: the instance branch is chosen by NOTIFICATION_ACTION
+# (.action) alone, like log:read and metric:*, and service/instance/entrypoint
+# refuses anything that is not a pure instance:data telemetry request. A
+# service action (it carries a slug) or a deployment never reaches the
+# instance workflow, whatever its .action says.
+# =============================================================================
+# action_notification <action> <slug>: a service action notification (slug, type, deployment).
+action_notification() {
+	jq -nc --arg action "$1" --arg slug "$2" '{notification: {
+		action: $action, slug: $slug, type: "custom",
+		parameters: {scope_id: "7", deployment_id: "77"}, arguments: {scope_id: ["7"]}, tags: {}}}'
+}
+
+@test "Should never route start-initial to the instance workflow, whatever its notification action" {
+	local action
+	for action in "deployment:create" "service:action:create" "scope:update" "" "instance:data"; do
+		rm -f "$NP_MOCK_CALLS_LOG"
+		export NP_ACTION_CONTEXT
+		NP_ACTION_CONTEXT=$(action_notification "$action" "start-initial")
+
+		run_entrypoint --service-path="$SCOPE_DIR"
+
+		if grep -q "instance/workflows/list.yaml" "$NP_MOCK_CALLS_LOG" 2>/dev/null; then
+			echo "start-initial with action '$action' reached the instance workflow"
+			cat "$NP_MOCK_CALLS_LOG"
+			return 1
+		fi
+		if [ "$action" != "instance:data" ]; then
+			assert_mock_call "$NP_MOCK_CALLS_LOG" "service-action exec --live-output --live-report --script=$PROJECT_ROOT/service/deployment/entrypoint"
+		fi
+	done
+}
+
+@test "Should refuse a service action that claims to be instance:data with the full block" {
+	export NP_ACTION_CONTEXT
+	NP_ACTION_CONTEXT=$(action_notification "instance:data" "start-initial")
+
+	run bash -c '"$0" "$@" 2>&1 >/dev/null' "$ENTRYPOINT" --service-path="$SCOPE_DIR"
+
+	assert_equal "$status" "1"
+	assert_line "❌ instance:data must be a telemetry request, got slug='start-initial' deployment='77'"
+	assert_line "💡 Possible causes:"
+	assert_line "   • A service action notification carries action instance:data"
+	assert_line "🔧 How to fix:"
+	assert_line "   • Check the notification channel: instance:data requests carry no slug and no deployment_id"
+	[ ! -f "$NP_MOCK_CALLS_LOG" ]
+}
+
+@test "Should refuse to run the instance handler for any other notification action" {
+	export NP_ACTION_CONTEXT CONTEXT NOTIFICATION_ACTION="metric:list" WORKING_DIRECTORY="$PROJECT_ROOT" SERVICE_PATH="$SCOPE_DIR"
+	NP_ACTION_CONTEXT=$(notification "metric:list" '{"scope_id": ["7"]}')
+	CONTEXT=$(echo "$NP_ACTION_CONTEXT" | jq -c .notification)
+
+	run bash -c '"$0" 2>&1 >/dev/null' "$PROJECT_ROOT/service/instance/entrypoint"
+
+	assert_equal "$status" "1"
+	assert_line "❌ service/instance/entrypoint only answers instance:data, got 'metric:list'"
+	[ ! -f "$NP_MOCK_CALLS_LOG" ]
+}
+
+@test "Should take the scope of an instance:data request from its arguments only" {
+	export NP_ACTION_CONTEXT
+	NP_ACTION_CONTEXT=$(jq -nc '{notification: {action: "instance:data", arguments: {scope_id: ["7"]}, tags: {scope_id: "99"}, parameters: {}}}')
+
+	run_entrypoint --service-path="$SCOPE_DIR"
+
+	assert_equal "$status" "0"
+	assert_equal "$(jq -r '.notification.parameters.scope_id' "$NP_MOCK_CONTEXT_FILE")" "7"
+}
