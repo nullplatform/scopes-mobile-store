@@ -112,9 +112,9 @@ it: the release publishes the image and registers the artifact.
 
 | Image | Moved by | Use it to |
 |---|---|---|
-| `agent-plugins/scopes/<name>:vX.Y.Z` | its release, once | pin an exact version |
-| `agent-plugins/scopes/<name>:latest` | each release | follow the last released version |
-| `beta/agent-plugins/scopes/<name>:test-<branch>-<short sha>` | each push to a pull request of this repository | deploy a change to a test scope before merging it |
+| `scopes/<name>:vX.Y.Z` | its release, once | pin an exact version |
+| `scopes/<name>:latest` | each release | follow the last released version |
+| `beta/scopes/<name>:test-<branch>-<short sha>` | each push to a pull request of this repository | deploy a change to a test scope before merging it |
 
 Beta images live in a separate repository that the beta role can write and the production role cannot, so a beta can never overwrite a released image. Pull requests from this repository can assume the beta role (fork and bot pull requests are skipped), and the tag carries the commit SHA, so two pull requests never overwrite each other by accident. Nothing deletes beta tags: they are ephemeral by convention. Each beta is also registered as its own nullplatform oci_image artifact (the `beta/` repository, under `NP_ARTIFACT_NRN`), separate from the release artifact, so it can be deployed to a test scope from the platform.
 
