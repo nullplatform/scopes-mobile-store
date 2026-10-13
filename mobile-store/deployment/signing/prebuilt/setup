@@ -1,0 +1,31 @@
+#!/bin/bash
+# =============================================================================
+# Signing layer: prebuilt
+#
+# The CI signs the binaries before registering them as assets, so the layer
+# only promotes BINARY_PATH_<PLATFORM> to SIGNED_BINARY_PATH_<PLATFORM> for
+# every platform of the scope.
+#
+# Sourced by the workflow: returns 1 on failure, never exits.
+# =============================================================================
+
+echo "🔍 Signing layer 'prebuilt': the binaries are signed by the CI"
+
+for prebuilt_platform in ${PLATFORMS:-}; do
+	prebuilt_platform_upper=$(echo "$prebuilt_platform" | tr '[:lower:]' '[:upper:]')
+	prebuilt_binary_var="BINARY_PATH_$prebuilt_platform_upper"
+	prebuilt_binary="${!prebuilt_binary_var:-}"
+	if [ -z "$prebuilt_binary" ]; then
+		{
+			echo "   ❌ $prebuilt_binary_var is not set"
+			echo "  💡 Possible causes:"
+			echo "    • The platform/$prebuilt_platform layer did not run before the signing layer"
+			echo "  🔧 How to fix:"
+			echo "    • Run the deployment workflow from the start so the $prebuilt_platform binary is downloaded first"
+		} >&2
+		return 1
+	fi
+	export "SIGNED_BINARY_PATH_$prebuilt_platform_upper=$prebuilt_binary"
+	echo "   ✅ $prebuilt_platform: using the CI-signed binary $prebuilt_binary"
+done
+unset prebuilt_platform prebuilt_platform_upper prebuilt_binary_var prebuilt_binary

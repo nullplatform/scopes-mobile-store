@@ -1,0 +1,130 @@
+#!/bin/bash
+# =============================================================================
+# Shared by publish and rollback of the Firebase App Distribution layer.
+#
+# firebase_require_setup
+#   Fails unless the layer setup exported FIREBASE_PROJECT and the app id of
+#   every platform of the scope, and the signing layer exported
+#   SIGNED_BINARY_PATH_<PLATFORM>.
+#
+# firebase_distribute <platform> <binary> <release notes>
+#   Uploads the binary to the Firebase app of the platform, distributes it to
+#   the group named by CHANNEL and records the release under .releases.<platform>
+#   of $WORKDIR/distribution.json. Returns 1 with the troubleshooting block
+#   when the CLI fails.
+#
+# The release name (projects/<n>/apps/<app id>/releases/<id>) is taken from
+# the CLI output: either the resource name itself or the id at the end of the
+# console link it prints. Without either the release is recorded as null.
+# =============================================================================
+
+firebase_require_setup() {
+	local platform platform_upper var
+	for var in FIREBASE_PROJECT GOOGLE_APPLICATION_CREDENTIALS; do
+		if [ -z "${!var:-}" ]; then
+			{
+				echo "   ❌ $var is not set"
+				echo "  💡 Possible causes:"
+				echo "    • The distribution/firebase layer setup did not run before the publish"
+				echo "  🔧 How to fix:"
+				echo "    • Run the deployment workflow from the start so the Firebase layer is configured first"
+			} >&2
+			return 1
+		fi
+	done
+	for platform in ${PLATFORMS:-}; do
+		platform_upper=$(echo "$platform" | tr '[:lower:]' '[:upper:]')
+		var="FIREBASE_APP_ID_$platform_upper"
+		if [ -z "${!var:-}" ]; then
+			{
+				echo "   ❌ $var is not set"
+				echo "  💡 Possible causes:"
+				echo "    • The distribution/firebase layer setup did not run before the publish"
+				echo "  🔧 How to fix:"
+				echo "    • Run the deployment workflow from the start so the Firebase layer is configured first"
+			} >&2
+			return 1
+		fi
+		var="SIGNED_BINARY_PATH_$platform_upper"
+		if [ -z "${!var:-}" ]; then
+			{
+				echo "   ❌ $var is not set"
+				echo "  💡 Possible causes:"
+				echo "    • The signing layer did not run before the distribution"
+				echo "  🔧 How to fix:"
+				echo "    • Run the deployment workflow from the start so the $platform binary is downloaded and signed first"
+			} >&2
+			return 1
+		fi
+	done
+}
+
+firebase_distribution_file() {
+	echo "$WORKDIR/distribution.json"
+}
+
+# firebase_distribution_init [extra json object]: starts a fresh distribution.json
+firebase_distribution_init() {
+	local extra="${1:-}"
+	[ -n "$extra" ] || extra='{}'
+	jq -nc --arg project "$FIREBASE_PROJECT" --arg group "$CHANNEL" --argjson extra "$extra" \
+		'{provider: "firebase", project: $project, group: $group, releases: {}} + $extra' > "$(firebase_distribution_file)"
+}
+
+firebase_distribute() {
+	local platform="$1" binary="$2" release_notes="$3"
+	local platform_upper app_id_var app_id output release_name release_id project_number group="$CHANNEL"
+
+	platform_upper=$(echo "$platform" | tr '[:lower:]' '[:upper:]')
+	app_id_var="FIREBASE_APP_ID_$platform_upper"
+	app_id="${!app_id_var}"
+
+	echo "   📡 $platform: distributing $binary to Firebase group '$group'"
+	if ! output=$(firebase appdistribution:distribute "$binary" \
+		--app "$app_id" --project "$FIREBASE_PROJECT" --groups "$group" \
+		--release-notes "$release_notes" --non-interactive 2>&1); then
+		{
+			echo "   ❌ $platform: Firebase App Distribution rejected the upload of $binary"
+			echo "$output" | sed 's/^/      /'
+			echo "  💡 Possible causes:"
+			case "$output" in
+				*PERMISSION_DENIED* | *"403"*)
+					echo "    • The Firebase service account was revoked or lacks the Firebase App Distribution Admin role"
+					echo "  🔧 How to fix:"
+					echo "    • Grant the service account in secret '${FIREBASE_CREDENTIALS_SECRET:-$(echo "${SCOPE_CONFIGURATION:-null}" | jq -r '.firebase.credentials_secret // "<credentials_secret>"')}' the Firebase App Distribution Admin role on project '$FIREBASE_PROJECT'"
+					;;
+				*"404"* | *"not found"* | *"Not found"*)
+					echo "    • The app id '$app_id' does not exist in the Firebase project '$FIREBASE_PROJECT'"
+					echo "  🔧 How to fix:"
+					echo "    • Copy the $platform app id from the Firebase console (Project settings > Your apps) into firebase.app_id_$platform"
+					;;
+				*)
+					echo "    • Firebase App Distribution is unavailable or rejected the binary (see the output above)"
+					echo "  🔧 How to fix:"
+					echo "    • Retry the deployment; if it keeps failing, run the firebase command above with the service account to see the full error"
+					;;
+			esac
+		} >&2
+		return 1
+	fi
+
+	release_name=$(echo "$output" | grep -oE 'projects/[^/[:space:]]+/apps/[^/[:space:]]+/releases/[A-Za-z0-9_-]+' | head -1 || true)
+	if [ -z "$release_name" ]; then
+		release_id=$(echo "$output" | grep -oE '/releases/[A-Za-z0-9_-]+' | head -1 | sed 's|^/releases/||' || true)
+		if [ -n "$release_id" ]; then
+			project_number=$(echo "$app_id" | cut -d: -f2)
+			release_name="projects/$project_number/apps/$app_id/releases/$release_id"
+		fi
+	fi
+
+	if [ -z "$release_name" ]; then
+		echo "   ⚠️ $platform: the firebase CLI did not report the release name; check the Firebase console for the latest release of $app_id"
+	fi
+
+	jq -c --arg platform "$platform" --arg app_id "$app_id" --arg group "$group" --arg name "$release_name" \
+		'.releases[$platform] = {app_id: $app_id, name: (if $name == "" then null else $name end), group: $group}' \
+		"$(firebase_distribution_file)" > "$(firebase_distribution_file).tmp"
+	mv "$(firebase_distribution_file).tmp" "$(firebase_distribution_file)"
+
+	echo "   ✅ $platform: distributed to Firebase group '$group' (release ${release_name:-unknown})"
+}

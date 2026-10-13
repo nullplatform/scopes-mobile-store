@@ -1,0 +1,37 @@
+#!/bin/bash
+# =============================================================================
+# Firebase App Distribution: publish
+#
+# Distributes the signed binary of every platform of the scope to the Firebase
+# group named by the developer's channel (internal, testers, production) and
+# writes $WORKDIR/distribution.json:
+#
+#   {"provider": "firebase", "project": "...", "group": "internal",
+#    "releases": {"android": {"app_id": "...", "name": "projects/../releases/..", "group": "internal"}}}
+#
+# Inputs: PLATFORMS, CHANNEL, SIGNED_BINARY_PATH_<PLATFORM>, FIREBASE_PROJECT,
+# FIREBASE_APP_ID_<PLATFORM>, GOOGLE_APPLICATION_CREDENTIALS (from the layer
+# setup), APPLICATION_SLUG, RELEASE_SEMVER, DIMENSION, DEPLOYMENT_ID, WORKDIR.
+# =============================================================================
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=mobile-store/deployment/distribution/firebase/distribute
+source "$SCRIPT_DIR/distribute"
+
+firebase_require_setup || exit 1
+
+echo "📝 Publishing release $RELEASE_SEMVER to Firebase App Distribution (group '$CHANNEL')"
+firebase_distribution_init
+
+release_notes="$APPLICATION_SLUG $RELEASE_SEMVER ($DIMENSION) deployment $DEPLOYMENT_ID"
+for platform in $PLATFORMS; do
+	binary_var="SIGNED_BINARY_PATH_$(echo "$platform" | tr '[:lower:]' '[:upper:]')"
+	if ! firebase_distribute "$platform" "${!binary_var}" "$release_notes"; then
+		rm -f "$(firebase_distribution_file)"
+		exit 1
+	fi
+done
+
+echo "✨ Published to Firebase App Distribution: $(firebase_distribution_file)"

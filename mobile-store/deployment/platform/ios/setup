@@ -1,0 +1,24 @@
+#!/bin/bash
+# =============================================================================
+# Platform layer: ios
+#
+# Downloads the ios asset of the release into $WORKDIR/ios/app.ipa, checks it
+# has the IPA layout (Payload/<name>.app/Info.plist) and exports
+# BINARY_PATH_IOS for the signing layer. Does nothing when the scope does not
+# publish ios. iOS signing and store distribution come in a later phase.
+#
+# Sourced by the workflow: returns 1 on failure, never exits.
+# =============================================================================
+
+# shellcheck source=mobile-store/deployment/scripts/prepare_platform_binary
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../scripts/prepare_platform_binary"
+
+PREPARED_BINARY_PATH=""
+prepare_platform_binary ios ipa "an iOS package: no Payload/*.app/Info.plist" 'Payload/[^/]+\.app/Info\.plist$' "the Xcode archive" || return 1
+
+if [ -n "$PREPARED_BINARY_PATH" ]; then
+	BINARY_PATH_IOS="$PREPARED_BINARY_PATH"
+	export BINARY_PATH_IOS
+	echo "   ✅ BINARY_PATH_IOS=$BINARY_PATH_IOS"
+fi
+unset PREPARED_BINARY_PATH
