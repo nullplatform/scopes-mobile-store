@@ -143,3 +143,16 @@ teardown() {
 	assert_equal "$status" "1"
 	assert_line "   ❌ FIREBASE_APP_ID_ANDROID is not set"
 }
+
+@test "Should print an empty result and the troubleshooting block when the credentials file no longer exists" {
+	export GOOGLE_APPLICATION_CREDENTIALS="$WORKDIR/firebase-sa.json"
+	rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+	unset FIREBASE_ACCESS_TOKEN
+
+	run bash -c '"$0" 2>"$1"' "$SCRIPT" "$TEST_TMP_DIR/stderr"
+
+	assert_equal "$status" "1"
+	assert_equal "$output" '{"results": []}'
+	assert_contains "$(cat "$TEST_TMP_DIR/stderr")" "   ❌ The Firebase credentials file does not exist: $WORKDIR/firebase-sa.json"
+	assert_contains "$(cat "$TEST_TMP_DIR/stderr")" "    • Re-run the distribution layer setup right before this step; credentials are deleted when each step finishes"
+}

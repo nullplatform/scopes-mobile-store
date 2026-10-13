@@ -29,6 +29,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOYMENT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# shellcheck source=mobile-store/deployment/distribution/firebase/distribute
+source "$SCRIPT_DIR/distribute"
 PAGE_SIZE="${FIREBASE_RELEASES_PAGE_SIZE:-20}"
 
 fail() {
@@ -57,6 +59,11 @@ for platform in ${PLATFORMS:-}; do
 		fail
 	fi
 done
+
+# An injected FIREBASE_ACCESS_TOKEN needs no service account file.
+if [ -z "${FIREBASE_ACCESS_TOKEN:-}" ] && ! firebase_require_credentials_file; then
+	fail
+fi
 
 if ! token=$("$DEPLOYMENT_DIR/scripts/firebase_access_token"); then
 	fail

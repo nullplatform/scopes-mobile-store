@@ -16,6 +16,8 @@
 #       FIREBASE_MOCK_FAIL=unauthorized    -> HTTP Error: 401 (expired or revoked key)
 #       FIREBASE_MOCK_FAIL=invalid_grant   -> invalid_grant: Invalid JWT Signature
 #       FIREBASE_MOCK_FAIL=unauthenticated -> UNAUTHENTICATED status
+#       FIREBASE_MOCK_FAIL=response_<401|403|404> -> HTTP Response: <code> (the
+#       wording of the upload and distribute requests)
 #       FIREBASE_MOCK_FAIL_PLATFORM=<android|ios> limits the failure to the
 #       apps of that platform (the other platform succeeds).
 #       The console link follows the real one:
@@ -73,6 +75,11 @@ case "${1:-}" in
       other)
         echo "i  uploading binary..."
         echo "Error: HTTP Error: 500, Internal error" >&2
+        exit 1
+        ;;
+      response_*)
+        echo "i  uploading binary..."
+        echo "Error: failed to upload release. HTTP Response: ${fail#response_}" >&2
         exit 1
         ;;
     esac
