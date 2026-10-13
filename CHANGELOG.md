@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0](https://github.com/nullplatform/scopes-mobile-store/compare/v1.0.0...v0.1.0) (2026-10-13)
+
+
+### Miscellaneous Chores
+
+* **mobile-store:** use the bundle asset type and record A1/A2 in the ledger ([8af096a](https://github.com/nullplatform/scopes-mobile-store/commit/8af096ae7db78faaa4cb97bea1bf05a2f0bae0a8))
+
 ## 1.0.0 (2026-10-13)
 
 
