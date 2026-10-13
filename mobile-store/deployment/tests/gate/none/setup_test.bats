@@ -134,3 +134,24 @@ teardown() {
 		done
 	done
 }
+
+@test "Should treat itself as gate none even when GATE_LAYER says otherwise" {
+	export CHANNEL="production"
+	export DISTRIBUTION_LAYER="app-store"
+	export GATE_LAYER="store-review"
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Publishing to production on a public store requires gate_layer=store-review"
+	assert_line "   📋 Channel: production | Distribution: app-store | Gate: none"
+}
+
+@test "Should refuse production with an unknown gate layer on a private distribution in the validator" {
+	run bash -c 'CHANNEL=production DISTRIBUTION_LAYER=firebase GATE_LAYER=store_review; source "$0"; validate_gate_for_channel' "$DEPLOYMENT_DIR/scripts/validators"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Unknown gate layer 'store_review' for channel 'production'"
+	assert_line "  🔧 How to fix:"
+	assert_line "    • Set gate_layer in the 'Mobile store' scope configuration to none or store-review"
+}

@@ -157,6 +157,7 @@ EOF
 @test "Should publish production to a public store when the gate is store-review" {
 	export CHANNEL="production"
 	export GATE_LAYER="store-review"
+	export GATE_RESULT="approved"
 	export DISTRIBUTION_LAYER="google-play"
 	mkdir -p "$SERVICE_PATH/deployment/distribution/google-play"
 	cp "$SERVICE_PATH/deployment/distribution/fake/publish" "$SERVICE_PATH/deployment/distribution/google-play/publish"
@@ -181,4 +182,72 @@ EOF
 	assert_line "   ⚠️ Publishing to production without an external approval gate"
 	assert_line "   📋 Channel: production | Distribution: firebase | Gate: none (testers get the build as soon as it is uploaded)"
 	assert_line "fake publish for android"
+}
+
+# =============================================================================
+# Fail closed: only an explicit store-review gate that ran lets production
+# reach a public store
+# =============================================================================
+setup_google_play() {
+	export CHANNEL="production"
+	export DISTRIBUTION_LAYER="google-play"
+	mkdir -p "$SERVICE_PATH/deployment/distribution/google-play"
+	cp "$SERVICE_PATH/deployment/distribution/fake/publish" "$SERVICE_PATH/deployment/distribution/google-play/publish"
+}
+
+@test "Should refuse production on a public store when the gate layer is empty or misspelled" {
+	setup_google_play
+	export GATE_RESULT="approved"
+	local gate
+	for gate in "" "store_review" "Store-Review" "none"; do
+		export GATE_LAYER="$gate"
+
+		run bash "$SCRIPT"
+
+		assert_equal "$status" "1"
+		assert_line "   ❌ Publishing to production on a public store requires gate_layer=store-review"
+		assert_line "   📋 Channel: production | Distribution: google-play | Gate: ${gate:-(not set)}"
+		refute_line "fake publish for android"
+	done
+	refute_np_called "deployment patch"
+}
+
+@test "Should refuse to publish when the store-review gate did not approve" {
+	setup_google_play
+	export GATE_LAYER="store-review"
+	local result
+	for result in "" "pending" "rejected"; do
+		export GATE_RESULT="$result"
+
+		run bash "$SCRIPT"
+
+		assert_equal "$status" "1"
+		assert_line "   ❌ The 'store-review' gate has not approved this deployment (GATE_RESULT=${result:-(not set)})"
+		assert_line "  💡 Possible causes:"
+		assert_line "    • The gate layer did not run before the publish, or the approval is still pending or was rejected"
+		assert_line "  🔧 How to fix:"
+		assert_line "    • Run the deployment workflow from the start so the gate layer runs and approves before publishing"
+		refute_line "fake publish for android"
+	done
+}
+
+@test "Should refuse production with an unknown gate layer on a private distribution" {
+	export CHANNEL="production"
+	export DISTRIBUTION_LAYER="fake"
+	export GATE_LAYER="nonee"
+	export GATE_RESULT="approved"
+
+	run bash "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Unknown distribution layer 'fake': cannot decide whether production needs an approval gate"
+}
+
+@test "Should refuse an unknown channel" {
+	export CHANNEL="beta"
+
+	run bash "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Unknown channel 'beta': cannot apply the approval gate policy"
 }
