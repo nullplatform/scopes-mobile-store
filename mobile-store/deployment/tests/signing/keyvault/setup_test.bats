@@ -43,7 +43,7 @@ teardown() {
 	assert_line "🔍 Signing layer 'keyvault': signing with the keystore stored in the secrets manager"
 	assert_line "   📡 Reading secret 'mobile/android-keystore'"
 	assert_line "   ✅ android: signed $WORKDIR/android/app.apk -> $WORKDIR/android/app-signed.apk (alias 'release')"
-	assert_mock_call "$AWS_MOCK_CALLS_LOG" "aws secretsmanager get-secret-value --secret-id mobile/android-keystore --query SecretString --output text"
+	assert_mock_call "$AWS_MOCK_CALLS_LOG" "aws secretsmanager get-secret-value --secret-id mobile/android-keystore --query SecretString --output text --region us-east-1"
 	assert_mock_call "$APKSIGNER_MOCK_LOG" "apksigner sign --ks $WORKDIR/android/keystore.jks --ks-pass env:MOBILE_STORE_KEYSTORE_PASSWORD --ks-key-alias release --key-pass env:MOBILE_STORE_KEY_PASSWORD --out $WORKDIR/android/app-signed.apk $WORKDIR/android/app.apk"
 	assert_mock_call "$APKSIGNER_MOCK_LOG" "apksigner verify $WORKDIR/android/app-signed.apk"
 

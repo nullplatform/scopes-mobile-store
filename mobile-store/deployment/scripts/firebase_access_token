@@ -9,7 +9,12 @@
 # token endpoint of the account (token_uri, default
 # https://oauth2.googleapis.com/token).
 #
-# FIREBASE_ACCESS_TOKEN, when set, is printed as is (tests and local runs).
+# FIREBASE_ACCESS_TOKEN, when set, is printed as is. It exists ONLY for the
+# BATS tests: never set it in the agent or in values.yaml.
+#
+# The token endpoint must be exactly https://oauth2.googleapis.com/token
+# (token_uri of the key, or the default when the key has none): the signed
+# assertion is never sent anywhere else.
 # Nothing of the key is ever printed; the key only lives in a mode-600 temp
 # file for the signature.
 # =============================================================================
@@ -40,7 +45,18 @@ if ! client_email=$(jq -er 'select(type == "object" and (.client_email | type ==
 	echo "   ❌ $GOOGLE_APPLICATION_CREDENTIALS is not a Google service account JSON (client_email and private_key are required)" >&2
 	exit 1
 fi
-token_uri=$(jq -r '.token_uri // "https://oauth2.googleapis.com/token"' "$GOOGLE_APPLICATION_CREDENTIALS")
+GOOGLE_TOKEN_URI="https://oauth2.googleapis.com/token"
+token_uri=$(jq -r --arg default "$GOOGLE_TOKEN_URI" '.token_uri // $default' "$GOOGLE_APPLICATION_CREDENTIALS")
+if [ "$token_uri" != "$GOOGLE_TOKEN_URI" ]; then
+	{
+		echo "   ❌ Unexpected token_uri '$token_uri' in the service account: only $GOOGLE_TOKEN_URI is allowed"
+		echo "  💡 Possible causes:"
+		echo "    • The credentials secret does not hold a key downloaded from Google Cloud, or it was tampered with"
+		echo "  🔧 How to fix:"
+		echo "    • Store the JSON key exactly as Google Cloud generated it in the credentials secret"
+	} >&2
+	exit 1
+fi
 
 base64url() {
 	base64 | tr -d '\n=' | tr '+/' '-_'
@@ -59,7 +75,7 @@ claims=$(jq -nc --arg iss "$client_email" --arg scope "$SCOPE" --arg aud "$token
 signature=$(printf '%s.%s' "$header" "$claims" | openssl dgst -sha256 -sign "$key_file" | base64url)
 assertion="$header.$claims.$signature"
 
-if ! response=$(curl -fsS -X POST "$token_uri" \
+if ! response=$(curl -fsS --connect-timeout 10 --max-time 60 --retry 2 -X POST "$token_uri" \
 	--data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer" \
 	--data-urlencode "assertion=$assertion" 2>&1); then
 	{

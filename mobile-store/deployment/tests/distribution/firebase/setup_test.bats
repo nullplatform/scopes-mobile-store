@@ -35,7 +35,7 @@ teardown() {
 	assert_line "   📡 Reading secret 'mobile/firebase-sa'"
 	assert_line "   ✅ credentials=$WORKDIR/firebase-sa.json (distributor@np-mobile-pc.iam.gserviceaccount.com)"
 	assert_line "✨ Firebase App Distribution configured"
-	assert_mock_call "$AWS_MOCK_CALLS_LOG" "aws secretsmanager get-secret-value --secret-id mobile/firebase-sa --query SecretString --output text"
+	assert_mock_call "$AWS_MOCK_CALLS_LOG" "aws secretsmanager get-secret-value --secret-id mobile/firebase-sa --query SecretString --output text --region us-east-1"
 
 	source "$SCRIPT"
 	assert_equal "$FIREBASE_PROJECT" "np-mobile-pc"
@@ -111,7 +111,7 @@ teardown() {
 	assert_line "  💡 Possible causes:"
 	assert_line "    • The worker image was built without firebase-tools"
 	assert_line "  🔧 How to fix:"
-	assert_line "    • Build the worker image from this repository's Dockerfile (it installs firebase-tools@14) and pin it in the agent"
+	assert_line "    • Build the worker image from this repository's Dockerfile (it installs firebase-tools@14.27.0) and pin it in the agent"
 }
 
 @test "Should fail with the full troubleshooting block when the credentials secret cannot be read" {
@@ -201,4 +201,23 @@ teardown() {
 		assert_line "    • Copy the project id from the Firebase console (Project settings > General): lowercase letters, digits and dashes only"
 		[ ! -f "$AWS_MOCK_CALLS_LOG" ]
 	done
+}
+
+@test "Should reject a platform other than android or ios" {
+	export PLATFORMS="android web"
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Unsupported platform 'web': Firebase App Distribution publishes android and ios only"
+	[ ! -f "$AWS_MOCK_CALLS_LOG" ]
+}
+
+@test "Should keep the workdir private to the worker user" {
+	chmod 755 "$WORKDIR"
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "0"
+	assert_equal "$(stat -f '%Lp' "$WORKDIR" 2>/dev/null || stat -c '%a' "$WORKDIR")" "700"
 }

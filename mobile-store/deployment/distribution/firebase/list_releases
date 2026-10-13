@@ -36,6 +36,14 @@ fail() {
 	exit 1
 }
 
+# The service account written by the layer setup is deleted on exit; a key
+# elsewhere (a developer's own) is left alone.
+credentials_to_remove=""
+if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ] && [ "$GOOGLE_APPLICATION_CREDENTIALS" = "${WORKDIR:-}/firebase-sa.json" ]; then
+	credentials_to_remove="$GOOGLE_APPLICATION_CREDENTIALS"
+fi
+trap 'rm -f "$credentials_to_remove"' EXIT
+
 for platform in ${PLATFORMS:-}; do
 	var="FIREBASE_APP_ID_$(echo "$platform" | tr '[:lower:]' '[:upper:]')"
 	if [ -z "${!var:-}" ]; then
@@ -61,7 +69,8 @@ for platform in ${PLATFORMS:-}; do
 	project_number=$(echo "$app_id" | cut -d: -f2)
 	url="https://firebaseappdistribution.googleapis.com/v1/projects/$project_number/apps/$app_id/releases?pageSize=$PAGE_SIZE"
 
-	if ! response=$(curl -fsS -H "Authorization: Bearer $token" "$url"); then
+	# The token goes through stdin, never through argv (visible in ps).
+	if ! response=$(curl -fsS --connect-timeout 10 --max-time 60 --retry 2 -H @- "$url" <<<"Authorization: Bearer $token"); then
 		{
 			echo "   ❌ Could not list the releases of the $platform app $app_id"
 			echo "  💡 Possible causes:"
@@ -73,7 +82,7 @@ for platform in ${PLATFORMS:-}; do
 		fail
 	fi
 
-	results=$(echo "$response" | jq -c --argjson results "$results" --arg platform "$platform" --arg app_id "$app_id" '
+	if ! results=$(echo "$response" | jq -c --argjson results "$results" --arg platform "$platform" --arg app_id "$app_id" '
 		$results + [(.releases // [])[] | {
 			platform: $platform,
 			app_id: $app_id,
@@ -84,7 +93,10 @@ for platform in ${PLATFORMS:-}; do
 			release_notes: (.releaseNotes.text // null),
 			console_url: .firebaseConsoleUri,
 			testing_url: .testingUri
-		}]')
+		}]' 2>/dev/null); then
+		echo "   ❌ The releases API answered something that is not JSON for the $platform app $app_id" >&2
+		fail
+	fi
 done
 
-jq -nc --argjson results "$results" '{results: $results}'
+jq -nc --argjson results "$results" '{results: $results}' || fail

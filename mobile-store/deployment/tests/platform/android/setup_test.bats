@@ -44,7 +44,7 @@ teardown() {
 
 	assert_equal "$status" "0"
 	assert_line "   ✅ BINARY_PATH_ANDROID=$WORKDIR/android/app.apk"
-	assert_mock_call "$CURL_MOCK_CALLS_LOG" "curl -fsSL -o $WORKDIR/android/app.apk https://assets-aws-mobile.s3.us-east-1.amazonaws.com/mobile/442353687/10/uat/app-release.apk"
+	assert_mock_call "$CURL_MOCK_CALLS_LOG" "curl -fsSL --proto =https --proto-redir =https --connect-timeout 10 --max-time 300 --retry 2 -o $WORKDIR/android/app.apk https://assets-aws-mobile.s3.us-east-1.amazonaws.com/mobile/442353687/10/uat/app-release.apk"
 	refute_line "aws s3 cp"
 }
 

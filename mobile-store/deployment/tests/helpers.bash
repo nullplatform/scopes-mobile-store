@@ -116,7 +116,7 @@ setup_layer_test() {
 	export IOS_BUNDLE_ID=""
 	export PREVIOUS_DEPLOYMENT_ID="70"
 	export PREVIOUS_RELEASE_SEMVER="0.9.0"
-	export FIREBASE_CLI_VERSION="14"
+	export FIREBASE_CLI_VERSION="14.27.0"
 	export WORKDIR="$TEST_TMP_DIR/work/77"
 	mkdir -p "$WORKDIR"
 

@@ -5,7 +5,7 @@ provider_categories:
   - cloud-providers
 configuration:
   DEPLOYMENT_MAX_WAIT_IN_SECONDS: 600       # upper bound for a single deployment step before it is failed
-  FIREBASE_CLI_VERSION: "14"                # firebase-tools major version installed when the distribution layer is firebase
+  FIREBASE_CLI_VERSION: "14.27.0"           # firebase-tools version baked into the worker image (Dockerfile ARG)
   WORKDIR: /tmp/mobile-store                # scratch directory where binaries are downloaded and signed
   GATE_POLL_INTERVAL_IN_SECONDS: 300        # how often the gate layer checks the external approval (store review)
   GATE_MAX_WAIT_IN_SECONDS: 259200          # 3 days: give up waiting for the external approval after this
