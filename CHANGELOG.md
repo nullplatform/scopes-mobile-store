@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/nullplatform/scopes-mobile-store/compare/v0.4.0...v0.4.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **mobile-store:** shorten the scope configuration description ([374c228](https://github.com/nullplatform/scopes-mobile-store/commit/374c2289c302f1dbda30e2339e717219fd01f415))
+
 ## [0.4.0](https://github.com/nullplatform/scopes-mobile-store/compare/v0.3.0...v0.4.0) (2026-10-13)
 
 
