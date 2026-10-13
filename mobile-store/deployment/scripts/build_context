@@ -60,6 +60,33 @@ DEPLOYMENT_ID=$(ctx '.deployment.id // empty')
 RELEASE_SEMVER=$(ctx '.release.semver // empty')
 DIMENSION=$(ctx '.scope.dimensions.environment // "default"')
 
+# These values end up in paths (WORKDIR), asset names and np commands: fail
+# early when they do not have the shape the platform produces.
+fail_invalid_context_value() {
+	local label="$1" value="$2" rule="$3"
+	{
+		echo "   ❌ Invalid $label '$value': $rule"
+		echo "  💡 Possible causes:"
+		echo "    • The context was not produced by the platform (CONTEXT was edited or built by hand)"
+		echo "  🔧 How to fix:"
+		echo "    • Run this script from a workflow executed with np service workflow exec --build-context"
+	} >&2
+	exit 1
+}
+
+[[ "$DEPLOYMENT_ID" =~ ^[0-9]+$ ]] || fail_invalid_context_value "deployment id" "$DEPLOYMENT_ID" "must be an integer"
+[[ "$SCOPE_ID" =~ ^[0-9]+$ ]] || fail_invalid_context_value "scope id" "$SCOPE_ID" "must be an integer"
+if ! [[ "$DIMENSION" =~ ^[a-z0-9-]+$ ]]; then
+	{
+		echo "   ❌ Invalid dimension '$DIMENSION': only lowercase letters, digits and dashes are allowed"
+		echo "  💡 Possible causes:"
+		echo "    • The environment dimension of the scope has an unexpected value"
+		echo "  🔧 How to fix:"
+		echo "    • Use dimension values made of lowercase letters, digits and dashes only"
+	} >&2
+	exit 1
+fi
+
 echo "   📋 Scope: $NAMESPACE_SLUG/$APPLICATION_SLUG/$SCOPE_SLUG (id $SCOPE_ID) | Dimension: $DIMENSION | Deployment: $DEPLOYMENT_ID | Release: $RELEASE_SEMVER"
 
 # =============================================================================
@@ -185,6 +212,28 @@ if [ -n "$missing_fields" ]; then
 	exit 1
 fi
 
+# Bucket and region are interpolated into asset URLs and cloud CLI calls.
+if ! [[ "$ASSETS_BUCKET" =~ ^[a-z0-9.-]+$ ]]; then
+	{
+		echo "   ❌ Invalid assets bucket '$ASSETS_BUCKET': only lowercase letters, digits, dots and dashes are allowed"
+		echo "  💡 Possible causes:"
+		echo "    • The assets.bucket field of the 'Mobile store' scope configuration (or ASSETS_BUCKET) is not a bare bucket name"
+		echo "  🔧 How to fix:"
+		echo "    • Set assets.bucket to the bucket name only (no scheme, path or spaces)"
+	} >&2
+	exit 1
+fi
+if ! [[ "$ASSETS_REGION" =~ ^[a-z0-9-]+$ ]]; then
+	{
+		echo "   ❌ Invalid assets region '$ASSETS_REGION': only lowercase letters, digits and dashes are allowed"
+		echo "  💡 Possible causes:"
+		echo "    • The assets.region field of the 'Mobile store' scope configuration (or ASSETS_REGION) is not a region name"
+		echo "  🔧 How to fix:"
+		echo "    • Set assets.region to a region name such as us-east-1"
+	} >&2
+	exit 1
+fi
+
 if [ -z "$SCOPE_CONFIGURATION" ]; then
 	SCOPE_CONFIGURATION=$(jq -nc \
 		--arg signing "$SIGNING_LAYER" --arg distribution "$DISTRIBUTION_LAYER" --arg gate "$GATE_LAYER" \
@@ -219,6 +268,9 @@ list_build_assets() {
 listed_assets=""
 ASSETS_JSON='{}'
 for platform in $PLATFORMS; do
+	# PLATFORMS only holds android/ios (see the case above); keep the guard so
+	# the asset name never carries anything else into paths.
+	[[ "$platform" =~ ^[a-z0-9-]+$ ]] || fail_invalid_context_value "platform" "$platform" "only lowercase letters, digits and dashes are allowed"
 	expected_name="$platform-$DIMENSION"
 	asset=$(echo "$context_asset" | jq -c --arg name "$expected_name" --arg type "$ASSET_TYPE" \
 		'select(.name == $name and .type == $type) // empty')

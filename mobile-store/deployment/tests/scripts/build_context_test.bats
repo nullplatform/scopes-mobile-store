@@ -442,3 +442,88 @@ with_context() {
 	assert_equal "$status" "1"
 	assert_line "   ❌ CONTEXT is not set or is not valid JSON"
 }
+
+# =============================================================================
+# Hardening: values coming from the context or the scope configuration end up
+# in paths and np commands, so they must match a strict shape.
+# =============================================================================
+@test "Should reject a deployment id that is not an integer" {
+	with_context '.deployment.id = "../77"'
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Invalid deployment id '../77': must be an integer"
+	assert_line "  💡 Possible causes:"
+	assert_line "    • The context was not produced by the platform (CONTEXT was edited or built by hand)"
+	assert_line "  🔧 How to fix:"
+	assert_line "    • Run this script from a workflow executed with np service workflow exec --build-context"
+}
+
+@test "Should reject a scope id that is not an integer" {
+	with_context '.scope.id = "7 8"'
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Invalid scope id '7 8': must be an integer"
+	assert_line "  💡 Possible causes:"
+	assert_line "    • The context was not produced by the platform (CONTEXT was edited or built by hand)"
+	assert_line "  🔧 How to fix:"
+	assert_line "    • Run this script from a workflow executed with np service workflow exec --build-context"
+}
+
+@test "Should reject a dimension with path characters" {
+	with_context '.scope.dimensions.environment = "../prod"'
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Invalid dimension '../prod': only lowercase letters, digits and dashes are allowed"
+	assert_line "  💡 Possible causes:"
+	assert_line "    • The environment dimension of the scope has an unexpected value"
+	assert_line "  🔧 How to fix:"
+	assert_line "    • Use dimension values made of lowercase letters, digits and dashes only"
+	refute_np_called "asset list"
+}
+
+@test "Should reject a platform with spaces before touching any path" {
+	with_context '.scope.capabilities.platform = "and roid"'
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Unsupported platform 'and roid'"
+	assert_line "    • The scope capability platform is not one of: android, ios, both"
+	refute_np_called "asset list"
+}
+
+@test "Should reject an assets bucket with path characters" {
+	export NP_MOCK_PROVIDER_LIST="$MOCKS_DIR/scope_configuration/provider_list_empty.json"
+	with_context '.providers["scope-configurations"].assets.bucket = "../assets bucket"'
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Invalid assets bucket '../assets bucket': only lowercase letters, digits, dots and dashes are allowed"
+	assert_line "  💡 Possible causes:"
+	assert_line "    • The assets.bucket field of the 'Mobile store' scope configuration (or ASSETS_BUCKET) is not a bare bucket name"
+	assert_line "  🔧 How to fix:"
+	assert_line "    • Set assets.bucket to the bucket name only (no scheme, path or spaces)"
+	refute_np_called "asset list"
+}
+
+@test "Should reject an assets region with spaces or path characters" {
+	export NP_MOCK_PROVIDER_LIST="$MOCKS_DIR/scope_configuration/provider_list_empty.json"
+	with_context '.providers["scope-configurations"].assets.region = "us east/../1"'
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Invalid assets region 'us east/../1': only lowercase letters, digits and dashes are allowed"
+	assert_line "  💡 Possible causes:"
+	assert_line "    • The assets.region field of the 'Mobile store' scope configuration (or ASSETS_REGION) is not a region name"
+	assert_line "  🔧 How to fix:"
+	assert_line "    • Set assets.region to a region name such as us-east-1"
+	refute_np_called "asset list"
+}

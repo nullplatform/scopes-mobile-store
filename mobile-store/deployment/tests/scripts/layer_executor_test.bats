@@ -179,3 +179,52 @@ setup() {
 	assert_equal "$status" "0"
 	assert_line "setup executed for gate/none"
 }
+
+# =============================================================================
+# Hardening: LAYER_TYPE and the implementation name become path segments
+# =============================================================================
+@test "Should reject a LAYER_TYPE with path characters" {
+	export LAYER_TYPE="../scripts"
+	export LAYER_VAR="DISTRIBUTION_LAYER"
+	export DISTRIBUTION_LAYER="firebase"
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Invalid layer type '../scripts': only lowercase letters and underscores are allowed"
+	assert_line "  💡 Possible causes:"
+	assert_line "    • The workflow step configuration sets LAYER_TYPE to an unexpected value"
+	assert_line "  🔧 How to fix:"
+	assert_line "    • Use one of the layer directories under deployment/ (signing, distribution, gate)"
+}
+
+@test "Should reject an implementation name with path characters or spaces" {
+	export LAYER_TYPE="distribution"
+	export LAYER_VAR="DISTRIBUTION_LAYER"
+	local value
+	for value in "../../tests/resources/layers/deployment/distribution/firebase" "fire base" "Firebase"; do
+		export DISTRIBUTION_LAYER="$value"
+
+		run source "$SCRIPT"
+
+		assert_equal "$status" "1"
+		assert_line "   ❌ Invalid distribution implementation name '$value': only lowercase letters, digits and dashes are allowed"
+		assert_line "  💡 Possible causes:"
+		assert_line "    • The scope configuration sets the distribution layer to an unexpected value"
+		assert_line "  🔧 How to fix:"
+		assert_line "    • Set the distribution layer in the 'Mobile store' scope configuration to one of the implementations under deployment/distribution/"
+		refute_line "setup executed for distribution/firebase"
+	done
+}
+
+@test "Should reject an invalid implementation name also in check mode" {
+	export LAYER_TYPE="gate"
+	export LAYER_VAR="GATE_LAYER"
+	export GATE_LAYER="../none"
+	export LAYER_CHECK="true"
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Invalid gate implementation name '../none': only lowercase letters, digits and dashes are allowed"
+}

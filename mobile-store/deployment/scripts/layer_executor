@@ -39,6 +39,18 @@ if [ -z "${LAYER_VAR:-}" ]; then
 	exit 1
 fi
 
+# LAYER_TYPE becomes a path segment: keep it to the layer directory names.
+if ! [[ "$LAYER_TYPE" =~ ^[a-z_]+$ ]]; then
+	{
+		echo "   ❌ Invalid layer type '$LAYER_TYPE': only lowercase letters and underscores are allowed"
+		echo "  💡 Possible causes:"
+		echo "    • The workflow step configuration sets LAYER_TYPE to an unexpected value"
+		echo "  🔧 How to fix:"
+		echo "    • Use one of the layer directories under deployment/ (signing, distribution, gate)"
+	} >&2
+	exit 1
+fi
+
 layer_value="${!LAYER_VAR:-}"
 
 if [ -z "$layer_value" ]; then
@@ -52,6 +64,19 @@ if [ -z "$layer_value" ]; then
 		echo "  🔧 How to fix:"
 		echo "    • Ensure the 'Mobile store' scope configuration has the $LAYER_TYPE layer configured"
 		echo ""
+	} >&2
+	exit 1
+fi
+
+# The implementation name comes from the scope configuration and becomes a
+# path segment: validate it before composing the setup path.
+if ! [[ "$layer_value" =~ ^[a-z0-9-]+$ ]]; then
+	{
+		echo "   ❌ Invalid $LAYER_TYPE implementation name '$layer_value': only lowercase letters, digits and dashes are allowed"
+		echo "  💡 Possible causes:"
+		echo "    • The scope configuration sets the $LAYER_TYPE layer to an unexpected value"
+		echo "  🔧 How to fix:"
+		echo "    • Set the $LAYER_TYPE layer in the 'Mobile store' scope configuration to one of the implementations under deployment/${LAYER_TYPE}/"
 	} >&2
 	exit 1
 fi
