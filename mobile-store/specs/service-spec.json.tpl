@@ -28,20 +28,48 @@
   "attributes": {
     "schema": {
       "type": "object",
-      "required": ["example"],
+      "required": ["platform", "channel"],
       "properties": {
-        "example": {
+        "platform": {
           "type": "string",
-          "title": "Example",
-          "description": "Replace with the capabilities developers choose, in their words, not the cloud's",
-          "default": "",
+          "title": "Platform",
+          "description": "Which mobile binaries this scope publishes. The build must produce the matching artifacts (APK/AAB for Android, IPA for iOS).",
+          "default": "android",
+          "oneOf": [
+            { "const": "android", "title": "Android" },
+            { "const": "ios", "title": "iOS" },
+            { "const": "both", "title": "Android and iOS" }
+          ],
+          "editableOn": ["create"]
+        },
+        "channel": {
+          "type": "string",
+          "title": "Distribution channel",
+          "description": "Who receives each deployment: your own team, a wider group of beta testers, or every end user.",
+          "default": "internal",
+          "oneOf": [
+            { "const": "internal", "title": "Internal testers" },
+            { "const": "testers", "title": "External testers / beta" },
+            { "const": "production", "title": "Production" }
+          ],
+          "editableOn": ["create", "update"]
+        },
+        "rollout_percentage": {
+          "type": "integer",
+          "title": "Initial rollout percentage",
+          "description": "Share of users that gets a new version first, on channels that support gradual rollout. Channels without gradual rollout ignore this value and deliver to everyone at once.",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 100,
           "editableOn": ["create", "update"]
         }
       },
       "uiSchema": {
         "type": "VerticalLayout",
         "elements": [
-          { "type": "Control", "scope": "#/properties/example" }
+          { "type": "Control", "scope": "#/properties/platform" },
+          { "type": "Control", "scope": "#/properties/channel" },
+          { "type": "Control", "scope": "#/properties/rollout_percentage" }
         ]
       }
     },

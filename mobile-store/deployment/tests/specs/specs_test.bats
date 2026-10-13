@@ -69,3 +69,40 @@ render() {
 	assert_equal "$(render "$SPECS_DIR/notification-channel.json.tpl" | jq -r '.filters["$or"][1]["arguments.scope_provider"]')" "spec_test"
 	assert_equal "$(render "$SPECS_DIR/notification-channel.json.tpl" | jq -r '.configuration.command.data.cmdline')" "/app/pkg/entrypoint --service-path=/app/pkg/mobile-store"
 }
+
+@test "Service spec exposes platform, channel and rollout percentage in developer vocabulary" {
+	local schema
+	schema=$(render "$SPECS_DIR/service-spec.json.tpl" | jq .attributes.schema)
+	assert_equal "$(echo "$schema" | jq -c .required)" '["platform","channel"]'
+	assert_equal "$(echo "$schema" | jq -r '.properties.platform.oneOf | map(.const) | join(",")')" "android,ios,both"
+	assert_equal "$(echo "$schema" | jq -r .properties.platform.default)" "android"
+	assert_equal "$(echo "$schema" | jq -c .properties.platform.editableOn)" '["create"]'
+	assert_equal "$(echo "$schema" | jq -r '.properties.channel.oneOf | map(.const) | join(",")')" "internal,testers,production"
+	assert_equal "$(echo "$schema" | jq -r .properties.channel.default)" "internal"
+	assert_equal "$(echo "$schema" | jq -c .properties.channel.editableOn)" '["create","update"]'
+	assert_equal "$(echo "$schema" | jq -r .properties.rollout_percentage.type)" "integer"
+	assert_equal "$(echo "$schema" | jq -r .properties.rollout_percentage.minimum)" "1"
+	assert_equal "$(echo "$schema" | jq -r .properties.rollout_percentage.maximum)" "100"
+	assert_equal "$(echo "$schema" | jq -r .properties.rollout_percentage.default)" "5"
+	assert_equal "$(echo "$schema" | jq -c .properties.rollout_percentage.editableOn)" '["create","update"]'
+	assert_equal "$(echo "$schema" | jq -r '.uiSchema.elements | map(.scope) | join(",")')" "#/properties/platform,#/properties/channel,#/properties/rollout_percentage"
+	assert_equal "$(echo "$schema" | jq -r '[.properties[] | .title, .description] | map(test("firebase|apple|google|fastlane"; "i")) | any')" "false"
+}
+
+@test "Scope configuration declares the layers and the assets bucket for DevOps" {
+	local cfg
+	cfg=$(render "$SPECS_DIR/scope-configuration.json.tpl")
+	assert_equal "$(echo "$cfg" | jq -r .name)" "Mobile store"
+	assert_equal "$(echo "$cfg" | jq -r .category)" "scope-configurations"
+	assert_true "$(echo "$cfg" | jq -r .allow_dimensions)" "allow_dimensions"
+	assert_equal "$(echo "$cfg" | jq -r '.visible_to[0]')" "organization=1:account=2"
+	assert_equal "$(echo "$cfg" | jq -r '.schema.properties.platform_layer.oneOf | map(.const) | join(",")')" "android,ios"
+	assert_equal "$(echo "$cfg" | jq -r '.schema.properties.signing_layer.oneOf | map(.const) | join(",")')" "prebuilt,keyvault,match"
+	assert_equal "$(echo "$cfg" | jq -r '.schema.properties.distribution_layer.oneOf | map(.const) | join(",")')" "firebase,app-store,google-play,foundry-eas,intune"
+	assert_equal "$(echo "$cfg" | jq -r '.schema.properties.gate_layer.oneOf | map(.const) | join(",")')" "none,store-review"
+	assert_equal "$(echo "$cfg" | jq -c .schema.required)" '["platform_layer","signing_layer","distribution_layer","gate_layer","assets"]'
+	assert_equal "$(echo "$cfg" | jq -c .schema.properties.assets.required)" '["bucket"]'
+	assert_equal "$(echo "$cfg" | jq -r .schema.properties.assets.properties.region.default)" "us-east-1"
+	assert_equal "$(echo "$cfg" | jq -r '.schema.allOf[] | select(.if.properties.distribution_layer.const == "firebase") | .then.required[0]')" "firebase"
+	assert_equal "$(echo "$cfg" | jq -r '.schema.allOf[] | select(.if.properties.signing_layer.const == "keyvault") | .then.properties.android.required[0]')" "keystore_secret"
+}
