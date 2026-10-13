@@ -79,15 +79,16 @@ with_context() {
 	local expected_assets='{
 	"android": {
 		"url": "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk",
-		"version": "1.0.0",
-		"build_number": 10,
-		"package": "ar.io.nullplatform.sample"
+		"asset_id": 6,
+		"build_id": 10
 	}
 	}'
 	assert_json_equal "$ASSETS_JSON" "$expected_assets" "ASSETS_JSON"
 	assert_equal "$ASSET_URL" "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk"
 	assert_equal "$ASSET_VERSION" "1.0.0"
 	assert_equal "$ASSET_BUILD_NUMBER" "10"
+	assert_equal "$ANDROID_PACKAGE" "ar.io.nullplatform.sample"
+	assert_empty "$IOS_BUNDLE_ID" "IOS_BUNDLE_ID"
 
 	assert_equal "$PREVIOUS_DEPLOYMENT_ID" "70"
 	assert_equal "$PREVIOUS_RELEASE_SEMVER" "0.9.0"
@@ -111,8 +112,8 @@ with_context() {
 	assert_line "   ✅ distribution_layer=firebase"
 	assert_line "   ✅ gate_layer=none"
 	assert_line "   ✅ assets_bucket=assets-aws-mobile (region us-east-1)"
-	assert_line "📡 Resolving build assets (type bundle, build 442353687)..."
-	assert_line "   ✅ android: android-uat -> s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk (version 1.0.0, build 10)"
+	assert_line "📡 Resolving build assets (type bundle, build 10)..."
+	assert_line "   ✅ android: android-uat -> s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk (release 1.0.0, build 10)"
 	assert_line "   📋 Previous deployment: 70 (release 0.9.0)"
 	assert_line "   📋 Workdir: $TEST_TMP_DIR/work/77"
 	assert_line "✨ Build context ready"
@@ -137,20 +138,18 @@ with_context() {
 	local expected_assets='{
 	"android": {
 		"url": "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk",
-		"version": "1.0.0",
-		"build_number": 10,
-		"package": "ar.io.nullplatform.sample"
+		"asset_id": 6,
+		"build_id": 10
 	},
 	"ios": {
 		"url": "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.ipa",
-		"version": "1.0.0",
-		"build_number": 10,
-		"package": "io.nullplatform.sample"
+		"asset_id": 12,
+		"build_id": 10
 	}
 	}'
 	assert_json_equal "$ASSETS_JSON" "$expected_assets" "ASSETS_JSON"
 	assert_equal "$ASSET_URL" "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk"
-	assert_np_called "np asset list --build-id 442353687 --format json"
+	assert_np_called "np asset list --build-id 10 --format json"
 }
 
 @test "Should fail with the full troubleshooting block when the ios binary is missing for platform both" {
@@ -177,14 +176,13 @@ with_context() {
 	local expected_assets='{
 	"android": {
 		"url": "s3://assets-aws-mobile/mobile/442353687/10/prod/app-release.apk",
-		"version": "1.0.0",
-		"build_number": 10,
-		"package": "ar.io.nullplatform.sample"
+		"asset_id": 8,
+		"build_id": 10
 	}
 	}'
 	assert_json_equal "$ASSETS_JSON" "$expected_assets" "ASSETS_JSON"
 	assert_equal "$ASSET_URL" "s3://assets-aws-mobile/mobile/442353687/10/prod/app-release.apk"
-	assert_np_called "np asset list --build-id 442353687 --format json"
+	assert_np_called "np asset list --build-id 10 --format json"
 }
 
 @test "Should fail with an actionable message when the build has no asset for the dimension" {
@@ -208,7 +206,7 @@ with_context() {
 	run source "$SCRIPT"
 
 	assert_equal "$status" "1"
-	assert_line "   ⚠️ Could not list the assets of build 442353687 (np asset list failed)"
+	assert_line "   ⚠️ Could not list the assets of build 10 (np asset list failed)"
 	assert_line "   ❌ No asset named 'android-prod' of type 'bundle' in release 1.0.0"
 }
 
@@ -229,8 +227,36 @@ with_context() {
 	run source "$SCRIPT"
 
 	assert_equal "$status" "0"
-	assert_line "📡 Resolving build assets (type mobile-binary, build 442353687)..."
-	assert_line "   ✅ android: android-prod -> s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk (version 1.0.0, build 10)"
+	assert_line "📡 Resolving build assets (type mobile-binary, build 10)..."
+	assert_line "   ✅ android: android-prod -> s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk (release 1.0.0, build 10)"
+}
+
+@test "Should resolve the same context when the asset carries no metadata (the platform does not persist it)" {
+	with_context '.asset.metadata = {}'
+
+	run_build_context
+
+	local expected_assets='{
+	"android": {
+		"url": "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk",
+		"asset_id": 6,
+		"build_id": 10
+	}
+	}'
+	assert_json_equal "$ASSETS_JSON" "$expected_assets" "ASSETS_JSON"
+	assert_equal "$ASSET_VERSION" "1.0.0"
+	assert_equal "$ASSET_BUILD_NUMBER" "10"
+	assert_equal "$ANDROID_PACKAGE" "ar.io.nullplatform.sample"
+}
+
+@test "Should export the app identifiers from the scope configuration" {
+	export NP_MOCK_PROVIDER_LIST="$MOCKS_DIR/scope_configuration/provider_list_empty.json"
+	with_context '.providers["scope-configurations"].ios = {"bundle_id": "io.nullplatform.sample"}'
+
+	run_build_context
+
+	assert_equal "$ANDROID_PACKAGE" "ar.io.nullplatform.sample"
+	assert_equal "$IOS_BUNDLE_ID" "io.nullplatform.sample"
 }
 
 @test "Should reject an unsupported platform" {
@@ -343,6 +369,8 @@ with_context() {
 	assert_equal "$GATE_LAYER" "store-review"
 	assert_equal "$ASSETS_BUCKET" "assets-from-env"
 	assert_equal "$ASSETS_REGION" "us-east-1"
+	assert_empty "$ANDROID_PACKAGE" "ANDROID_PACKAGE"
+	assert_empty "$IOS_BUNDLE_ID" "IOS_BUNDLE_ID"
 	local expected_configuration='{
 	"signing_layer": "keyvault",
 	"distribution_layer": "google-play",

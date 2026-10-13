@@ -2,43 +2,33 @@
   "results": [
     {
       "id": 6,
-      "build_id": 442353687,
+      "build_id": 10,
       "name": "android-uat",
       "type": "bundle",
       "url": "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk",
       "platform": "",
-      "metadata": {
-        "version": "1.0.0",
-        "build_number": 10,
-        "package": "ar.io.nullplatform.sample",
-        "environment": "uat"
-      },
-      "nrn": "organization=1:account=2:namespace=3:application=442353687:build=442353687:asset=6"
+      "metadata": {},
+      "nrn": "organization=1:account=2:namespace=3:application=442353687:build=10:asset=6"
     },
     {
       "id": 8,
-      "build_id": 442353687,
+      "build_id": 10,
       "name": "android-prod",
       "type": "bundle",
       "url": "s3://assets-aws-mobile/mobile/442353687/10/prod/app-release.apk",
       "platform": "",
-      "metadata": {
-        "version": "1.0.0",
-        "build_number": 10,
-        "package": "ar.io.nullplatform.sample",
-        "environment": "prod"
-      },
-      "nrn": "organization=1:account=2:namespace=3:application=442353687:build=442353687:asset=8"
+      "metadata": {},
+      "nrn": "organization=1:account=2:namespace=3:application=442353687:build=10:asset=8"
     },
     {
       "id": 9,
-      "build_id": 442353687,
+      "build_id": 10,
       "name": "ios-uat",
       "type": "docker-image",
       "url": "registry.example.com/sample/ios-uat:10",
       "platform": "",
       "metadata": {},
-      "nrn": "organization=1:account=2:namespace=3:application=442353687:build=442353687:asset=9"
+      "nrn": "organization=1:account=2:namespace=3:application=442353687:build=10:asset=9"
     }
   ]
 }

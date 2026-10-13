@@ -18,8 +18,11 @@
 #   ASSETS_BUCKET, ASSETS_REGION
 #   SCOPE_CONFIGURATION  the whole 'Mobile store' scope configuration (JSON)
 #   ASSET_TYPE           type of the binaries this scope deploys (.asset.type)
-#   ASSETS_JSON          {"<platform>": {url, version, build_number, package}}
-#   ASSET_URL, ASSET_VERSION, ASSET_BUILD_NUMBER   first platform, for convenience
+#   ASSETS_JSON          {"<platform>": {url, asset_id, build_id}}
+#   ASSET_URL            url of the first platform, for convenience
+#   ASSET_VERSION        = RELEASE_SEMVER (asset metadata is not persisted)
+#   ASSET_BUILD_NUMBER   = .asset.build_id (unique, increasing build id)
+#   ANDROID_PACKAGE, IOS_BUNDLE_ID   from SCOPE_CONFIGURATION.android/.ios, empty when unset
 #   PREVIOUS_DEPLOYMENT_ID, PREVIOUS_RELEASE_SEMVER  last successful deployment
 #   WORKDIR              $WORKDIR/<deployment id>, created
 #   CONTEXT              with .providers["scope-configurations"] replaced by ours
@@ -298,15 +301,21 @@ for platform in $PLATFORMS; do
 		exit 1
 	fi
 
+	# The platform does not persist asset metadata (np asset list shows {}), so
+	# the version is the release semver and the build number the build id.
 	ASSETS_JSON=$(echo "$ASSETS_JSON" | jq -c --arg platform "$platform" --argjson asset "$asset" \
-		'.[$platform] = {url: $asset.url, version: $asset.metadata.version, build_number: $asset.metadata.build_number, package: $asset.metadata.package}')
-	echo "   ✅ $platform: $expected_name -> $(echo "$asset" | jq -r '.url') (version $(echo "$asset" | jq -r '.metadata.version // "unknown"'), build $(echo "$asset" | jq -r '.metadata.build_number // "unknown"'))"
+		'.[$platform] = {url: $asset.url, asset_id: $asset.id, build_id: $asset.build_id}')
+	echo "   ✅ $platform: $expected_name -> $(echo "$asset" | jq -r '.url') (release $RELEASE_SEMVER, build $build_id)"
 done
 
 first_platform="${PLATFORMS%% *}"
 ASSET_URL=$(echo "$ASSETS_JSON" | jq -r --arg platform "$first_platform" '.[$platform].url // empty')
-ASSET_VERSION=$(echo "$ASSETS_JSON" | jq -r --arg platform "$first_platform" '.[$platform].version // empty')
-ASSET_BUILD_NUMBER=$(echo "$ASSETS_JSON" | jq -r --arg platform "$first_platform" '.[$platform].build_number // empty')
+ASSET_VERSION="$RELEASE_SEMVER"
+ASSET_BUILD_NUMBER="$build_id"
+
+# App identifiers come from the scope configuration, not from the asset.
+ANDROID_PACKAGE=$(echo "$SCOPE_CONFIGURATION" | jq -r '.android.package // empty')
+IOS_BUNDLE_ID=$(echo "$SCOPE_CONFIGURATION" | jq -r '.ios.bundle_id // empty')
 
 # =============================================================================
 # Previous deployment: the last successful one of this scope, other than the
@@ -353,6 +362,6 @@ export CONTEXT
 export DIMENSION PLATFORMS CHANNEL ROLLOUT_PERCENTAGE
 export RELEASE_SEMVER DEPLOYMENT_ID SCOPE_ID APPLICATION_SLUG NAMESPACE_SLUG SCOPE_SLUG
 export SIGNING_LAYER DISTRIBUTION_LAYER GATE_LAYER ASSETS_BUCKET ASSETS_REGION SCOPE_CONFIGURATION
-export ASSET_TYPE ASSETS_JSON ASSET_URL ASSET_VERSION ASSET_BUILD_NUMBER
+export ASSET_TYPE ASSETS_JSON ASSET_URL ASSET_VERSION ASSET_BUILD_NUMBER ANDROID_PACKAGE IOS_BUNDLE_ID
 export PREVIOUS_DEPLOYMENT_ID PREVIOUS_RELEASE_SEMVER
 export WORKDIR
