@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.0](https://github.com/nullplatform/scopes-mobile-store/compare/v0.2.0...v0.3.0) (2026-10-13)
+
+
+### Features
+
+* **mobile-store:** add android, signing, firebase and gate layers ([709573e](https://github.com/nullplatform/scopes-mobile-store/commit/709573e6e5b348892295d134c3b030ea14038174))
+* **mobile-store:** add distribution tooling to the worker image ([243b319](https://github.com/nullplatform/scopes-mobile-store/commit/243b3198bef67c94eadd61b40e38a91cbd5e8ba3))
+* **mobile-store:** add the AWS IAM requirements module for the agent ([12687d8](https://github.com/nullplatform/scopes-mobile-store/commit/12687d823fc91e6e5bce5ee87736cc785a978db8))
+
+
+### Bug Fixes
+
+* **mobile-store:** avoid SIGPIPE when validating large binaries ([d117111](https://github.com/nullplatform/scopes-mobile-store/commit/d117111d4aba01d676281b3e776d8ef5831149ac))
+* **mobile-store:** enforce the approval gate for production on public stores ([8f0c514](https://github.com/nullplatform/scopes-mobile-store/commit/8f0c5140f2330291ec991f6d54a968482831d963))
+* **mobile-store:** harden credentials, network calls and partial distributions ([07aecb5](https://github.com/nullplatform/scopes-mobile-store/commit/07aecb5e90a08c267f96fdf475a97db4e53f86a0))
+* **mobile-store:** make the production approval gate fail closed ([2ffe808](https://github.com/nullplatform/scopes-mobile-store/commit/2ffe80823c3058b66d257c862d53f23fd200dfb9))
+* **mobile-store:** restrict secrets, asset sources and Firebase ids to the configured scope ([1e761fd](https://github.com/nullplatform/scopes-mobile-store/commit/1e761fd169fee5013c9d6f8f06e75ff9c2fa3520))
+
 ## [0.2.0](https://github.com/nullplatform/scopes-mobile-store/compare/v0.1.2...v0.2.0) (2026-10-13)
 
 
