@@ -43,6 +43,7 @@ teardown() {
 		"provider": "firebase",
 		"project": "np-mobile-pc",
 		"group": "internal",
+		"rollout_percentage": 100,
 		"releases": {
 			"android": {
 				"app_id": "1:726762523137:android:a700b1fa49f91e41eb0e00",
@@ -153,4 +154,73 @@ teardown() {
 	assert_equal "$status" "1"
 	assert_line "   ❌ FIREBASE_PROJECT is not set"
 	assert_line "    • The distribution/firebase layer setup did not run before the publish"
+}
+
+# =============================================================================
+# Hardening
+# =============================================================================
+@test "Should fail with a credentials-specific block when the service account key expired or was revoked" {
+	local failure expected
+	for failure in unauthorized invalid_grant unauthenticated; do
+		export FIREBASE_MOCK_FAIL="$failure"
+		echo '{}' > "$GOOGLE_APPLICATION_CREDENTIALS"
+
+		run bash "$SCRIPT"
+
+		assert_equal "$status" "1"
+		assert_line "   ❌ android: Firebase App Distribution rejected the upload of $WORKDIR/android/app.apk"
+		assert_line "  💡 Possible causes:"
+		assert_line "    • The key of the Firebase service account expired, was deleted or was revoked"
+		assert_line "  🔧 How to fix:"
+		assert_line "    • Create a new JSON key for the service account and store it in secret 'mobile/firebase-sa'"
+		refute_line "    • The Firebase service account was revoked or lacks the Firebase App Distribution Admin role"
+	done
+}
+
+@test "Should keep a partial distribution.json when a later platform fails" {
+	export PLATFORMS="android ios"
+	mkdir -p "$WORKDIR/ios"
+	make_fixture_ipa "$WORKDIR/ios/app.ipa"
+	export SIGNED_BINARY_PATH_IOS="$WORKDIR/ios/app.ipa"
+	export FIREBASE_APP_ID_IOS="1:726762523137:ios:b811c2fb50a02f52fc1f11"
+	export FIREBASE_MOCK_FAIL="permission"
+	export FIREBASE_MOCK_FAIL_PLATFORM="ios"
+
+	run bash "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ✅ android: distributed to Firebase group 'internal' (release projects/726762523137/apps/1:726762523137:android:a700b1fa49f91e41eb0e00/releases/0abcdef)"
+	assert_line "   ❌ ios: Firebase App Distribution rejected the upload of $WORKDIR/ios/app.ipa"
+	assert_line "   ⚠️ android was already distributed to group 'internal'; ios failed"
+	assert_equal "$(jq -r '.partial' "$WORKDIR/distribution.json")" "true"
+	assert_equal "$(jq -r '.releases | keys | join(",")' "$WORKDIR/distribution.json")" "android"
+	assert_equal "$(jq -r '.failed | join(",")' "$WORKDIR/distribution.json")" "ios"
+}
+
+@test "Should remove the service account file when it finishes, on success and on failure" {
+	run bash "$SCRIPT"
+	assert_equal "$status" "0"
+	assert_file_not_exists "$GOOGLE_APPLICATION_CREDENTIALS"
+
+	echo '{}' > "$GOOGLE_APPLICATION_CREDENTIALS"
+	export FIREBASE_MOCK_FAIL="permission"
+	run bash "$SCRIPT"
+	assert_equal "$status" "1"
+	assert_file_not_exists "$GOOGLE_APPLICATION_CREDENTIALS"
+}
+
+@test "Should not read a 403 inside an unrelated number as a permission error" {
+	cat > "$TEST_TMP_DIR/firebase" <<'EOF'
+#!/bin/bash
+echo "Error: upload of build 14031 timed out" >&2
+exit 1
+EOF
+	chmod +x "$TEST_TMP_DIR/firebase"
+	export PATH="$TEST_TMP_DIR:$PATH"
+
+	run bash "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "    • Firebase App Distribution is unavailable or rejected the binary (see the output above)"
+	refute_line "    • The Firebase service account was revoked or lacks the Firebase App Distribution Admin role"
 }

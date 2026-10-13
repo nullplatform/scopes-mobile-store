@@ -2,21 +2,51 @@
 # =============================================================================
 # Shared by publish and rollback of the Firebase App Distribution layer.
 #
+# firebase_remove_credentials_on_exit
+#   Deletes the service account the layer setup wrote ($WORKDIR/firebase-sa.json)
+#   when the calling executable exits, success or failure. A credentials file
+#   anywhere else (a developer's own key) is never touched.
+#
 # firebase_require_setup
 #   Fails unless the layer setup exported FIREBASE_PROJECT and the app id of
 #   every platform of the scope, and the signing layer exported
 #   SIGNED_BINARY_PATH_<PLATFORM>.
 #
+# firebase_distribution_init [extra json object]
+#   Starts $WORKDIR/distribution.json. Firebase has no staged rollout, so the
+#   effective rollout_percentage is always 100.
+#
+# firebase_distribute_all <release notes>
+#   Distributes the signed binary of every platform of the scope. When a
+#   platform fails after another one was already distributed, distribution.json
+#   is kept with "partial": true and the failed platform under "failed" (what
+#   was distributed cannot be taken back); when nothing was distributed the
+#   file is removed.
+#
 # firebase_distribute <platform> <binary> <release notes>
-#   Uploads the binary to the Firebase app of the platform, distributes it to
-#   the group named by CHANNEL and records the release under .releases.<platform>
-#   of $WORKDIR/distribution.json. Returns 1 with the troubleshooting block
-#   when the CLI fails.
+#   Uploads one binary to the Firebase app of the platform, distributes it to
+#   the group named by CHANNEL and records the release under .releases.<platform>.
 #
 # The release name (projects/<n>/apps/<app id>/releases/<id>) is taken from
 # the CLI output: either the resource name itself or the id at the end of the
 # console link it prints. Without either the release is recorded as null.
 # =============================================================================
+
+firebase_remove_credentials_on_exit() {
+	FIREBASE_CREDENTIALS_TO_REMOVE=""
+	if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ] && [ "$GOOGLE_APPLICATION_CREDENTIALS" = "${WORKDIR:-}/firebase-sa.json" ]; then
+		FIREBASE_CREDENTIALS_TO_REMOVE="$GOOGLE_APPLICATION_CREDENTIALS"
+	fi
+	trap 'rm -f "${FIREBASE_CREDENTIALS_TO_REMOVE:-}"' EXIT
+}
+
+firebase_credentials_secret() {
+	if [ -n "${FIREBASE_CREDENTIALS_SECRET:-}" ]; then
+		echo "$FIREBASE_CREDENTIALS_SECRET"
+	else
+		echo "${SCOPE_CONFIGURATION:-null}" | jq -r '.firebase.credentials_secret // "<credentials_secret>"' 2>/dev/null || echo "<credentials_secret>"
+	fi
+}
 
 firebase_require_setup() {
 	local platform platform_upper var
@@ -63,12 +93,39 @@ firebase_distribution_file() {
 	echo "$WORKDIR/distribution.json"
 }
 
-# firebase_distribution_init [extra json object]: starts a fresh distribution.json
 firebase_distribution_init() {
 	local extra="${1:-}"
 	[ -n "$extra" ] || extra='{}'
 	jq -nc --arg project "$FIREBASE_PROJECT" --arg group "$CHANNEL" --argjson extra "$extra" \
-		'{provider: "firebase", project: $project, group: $group, releases: {}} + $extra' > "$(firebase_distribution_file)"
+		'{provider: "firebase", project: $project, group: $group, rollout_percentage: 100, releases: {}} + $extra' \
+		> "$(firebase_distribution_file)" || return 1
+}
+
+# firebase_distribution_update <jq filter> [jq args...]
+firebase_distribution_update() {
+	local filter="$1" file
+	shift
+	file="$(firebase_distribution_file)"
+	jq -c "$@" "$filter" "$file" > "$file.tmp" || { rm -f "$file.tmp"; return 1; }
+	mv "$file.tmp" "$file" || return 1
+}
+
+firebase_distribute_all() {
+	local release_notes="$1" platform binary_var distributed=""
+	for platform in ${PLATFORMS:-}; do
+		binary_var="SIGNED_BINARY_PATH_$(echo "$platform" | tr '[:lower:]' '[:upper:]')"
+		if ! firebase_distribute "$platform" "${!binary_var}" "$release_notes"; then
+			if [ -n "$distributed" ]; then
+				# shellcheck disable=SC2016
+				firebase_distribution_update '.partial = true | .failed = [$failed]' --arg failed "$platform" || true
+				echo "   ⚠️ ${distributed# } was already distributed to group '$CHANNEL'; $platform failed"
+			else
+				rm -f "$(firebase_distribution_file)"
+			fi
+			return 1
+		fi
+		distributed="$distributed $platform"
+	done
 }
 
 firebase_distribute() {
@@ -88,12 +145,17 @@ firebase_distribute() {
 			echo "$output" | sed 's/^/      /'
 			echo "  💡 Possible causes:"
 			case "$output" in
-				*PERMISSION_DENIED* | *"403"*)
+				*"HTTP Error: 401"* | *invalid_grant* | *UNAUTHENTICATED*)
+					echo "    • The key of the Firebase service account expired, was deleted or was revoked"
+					echo "  🔧 How to fix:"
+					echo "    • Create a new JSON key for the service account and store it in secret '$(firebase_credentials_secret)'"
+					;;
+				*"HTTP Error: 403"* | *PERMISSION_DENIED*)
 					echo "    • The Firebase service account was revoked or lacks the Firebase App Distribution Admin role"
 					echo "  🔧 How to fix:"
-					echo "    • Grant the service account in secret '${FIREBASE_CREDENTIALS_SECRET:-$(echo "${SCOPE_CONFIGURATION:-null}" | jq -r '.firebase.credentials_secret // "<credentials_secret>"')}' the Firebase App Distribution Admin role on project '$FIREBASE_PROJECT'"
+					echo "    • Grant the service account in secret '$(firebase_credentials_secret)' the Firebase App Distribution Admin role on project '$FIREBASE_PROJECT'"
 					;;
-				*"404"* | *"not found"* | *"Not found"*)
+				*"HTTP Error: 404"* | *"not found"* | *"Not found"*)
 					echo "    • The app id '$app_id' does not exist in the Firebase project '$FIREBASE_PROJECT'"
 					echo "  🔧 How to fix:"
 					echo "    • Copy the $platform app id from the Firebase console (Project settings > Your apps) into firebase.app_id_$platform"
@@ -121,10 +183,10 @@ firebase_distribute() {
 		echo "   ⚠️ $platform: the firebase CLI did not report the release name; check the Firebase console for the latest release of $app_id"
 	fi
 
-	jq -c --arg platform "$platform" --arg app_id "$app_id" --arg group "$group" --arg name "$release_name" \
+	# shellcheck disable=SC2016
+	firebase_distribution_update \
 		'.releases[$platform] = {app_id: $app_id, name: (if $name == "" then null else $name end), group: $group}' \
-		"$(firebase_distribution_file)" > "$(firebase_distribution_file).tmp"
-	mv "$(firebase_distribution_file).tmp" "$(firebase_distribution_file)"
+		--arg platform "$platform" --arg app_id "$app_id" --arg group "$group" --arg name "$release_name" || return 1
 
 	echo "   ✅ $platform: distributed to Firebase group '$group' (release ${release_name:-unknown})"
 }

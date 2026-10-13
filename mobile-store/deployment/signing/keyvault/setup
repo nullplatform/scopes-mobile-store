@@ -42,6 +42,7 @@ keyvault_cleanup() {
 	unset keyvault_secret keyvault_secret_json keyvault_keystore_password keyvault_key_password
 	unset keyvault_key_alias keyvault_keystore keyvault_signed keyvault_binary_dir keyvault_output
 	unset MOBILE_STORE_KEYSTORE_PASSWORD MOBILE_STORE_KEY_PASSWORD
+	unset -f keyvault_fail_secret_read keyvault_cleanup
 }
 
 case " ${PLATFORMS:-} " in
@@ -99,7 +100,7 @@ fi
 
 echo "   📡 Reading secret '$keyvault_secret'"
 if ! keyvault_secret_json=$(aws secretsmanager get-secret-value --secret-id "$keyvault_secret" \
-	--query SecretString --output text 2>/dev/null); then
+	--query SecretString --output text --region "${ASSETS_REGION:-us-east-1}" 2>/dev/null); then
 	keyvault_fail_secret_read "$keyvault_secret"
 	keyvault_cleanup
 	return 1
@@ -129,7 +130,8 @@ keyvault_key_alias=$(echo "$keyvault_secret_json" | jq -r '.key_alias')
 keyvault_keystore_password=$(echo "$keyvault_secret_json" | jq -r '.keystore_password')
 keyvault_key_password=$(echo "$keyvault_secret_json" | jq -r '.key_password')
 
-mkdir -p "$WORKDIR/android"
+(umask 077 && mkdir -p "$WORKDIR/android")
+chmod 700 "$WORKDIR"
 if ! (umask 077 && echo "$keyvault_secret_json" | jq -r '.keystore_base64' | base64 -d > "$keyvault_keystore") 2>/dev/null; then
 	{
 		echo "   ❌ Secret '$keyvault_secret' is not a keystore secret"

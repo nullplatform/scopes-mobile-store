@@ -35,6 +35,20 @@ FIREBASE_CREDENTIALS_SECRET=$(firebase_config '.firebase.credentials_secret')
 FIREBASE_APP_ID_ANDROID=""
 FIREBASE_APP_ID_IOS=""
 
+for firebase_platform in ${PLATFORMS:-}; do
+	if ! [[ "$firebase_platform" =~ ^(android|ios)$ ]]; then
+		{
+			echo "   ❌ Unsupported platform '$firebase_platform': Firebase App Distribution publishes android and ios only"
+			echo "  💡 Possible causes:"
+			echo "    • PLATFORMS was not produced by build_context"
+			echo "  🔧 How to fix:"
+			echo "    • Run the deployment workflow from the start so build_context resolves the platforms of the scope"
+		} >&2
+		firebase_cleanup
+		return 1
+	fi
+done
+
 firebase_missing=""
 firebase_missing_platforms=""
 if [ -z "$FIREBASE_PROJECT" ]; then
@@ -93,7 +107,7 @@ if ! command -v firebase >/dev/null 2>&1; then
 		echo "  💡 Possible causes:"
 		echo "    • The worker image was built without firebase-tools"
 		echo "  🔧 How to fix:"
-		echo "    • Build the worker image from this repository's Dockerfile (it installs firebase-tools@${FIREBASE_CLI_VERSION:-14}) and pin it in the agent"
+		echo "    • Build the worker image from this repository's Dockerfile (it installs firebase-tools@${FIREBASE_CLI_VERSION:-14.27.0}) and pin it in the agent"
 	} >&2
 	firebase_cleanup
 	return 1
@@ -106,7 +120,7 @@ fi
 
 echo "   📡 Reading secret '$FIREBASE_CREDENTIALS_SECRET'"
 if ! firebase_service_account=$(aws secretsmanager get-secret-value --secret-id "$FIREBASE_CREDENTIALS_SECRET" \
-	--query SecretString --output text 2>/dev/null); then
+	--query SecretString --output text --region "${ASSETS_REGION:-us-east-1}" 2>/dev/null); then
 	{
 		echo "   ❌ Could not read secret '$FIREBASE_CREDENTIALS_SECRET' from the secrets manager"
 		echo "  💡 Possible causes:"
@@ -135,7 +149,8 @@ if [ -z "$firebase_client_email" ]; then
 fi
 
 GOOGLE_APPLICATION_CREDENTIALS="$WORKDIR/firebase-sa.json"
-mkdir -p "$WORKDIR"
+(umask 077 && mkdir -p "$WORKDIR")
+chmod 700 "$WORKDIR"
 (umask 077 && printf '%s\n' "$firebase_service_account" > "$GOOGLE_APPLICATION_CREDENTIALS")
 echo "   ✅ credentials=$GOOGLE_APPLICATION_CREDENTIALS ($firebase_client_email)"
 

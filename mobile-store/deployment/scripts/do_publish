@@ -94,8 +94,9 @@ if [ ! -f "$distribution_file" ] || ! jq -e 'type == "object" and has("provider"
 	exit 1
 fi
 
+# A layer without staged rollout (Firebase) reports the effective 100%.
 summary=$(jq -c --arg channel "${CHANNEL:-internal}" --argjson rollout "${ROLLOUT_PERCENTAGE:-100}" \
-	'. + {channel: $channel, rollout_percentage: $rollout}' "$distribution_file")
+	'. + {channel: $channel, rollout_percentage: (.rollout_percentage // $rollout)}' "$distribution_file")
 printf '%s\n' "$summary" > "$distribution_file"
 echo "   📋 Distribution summary: $summary"
 

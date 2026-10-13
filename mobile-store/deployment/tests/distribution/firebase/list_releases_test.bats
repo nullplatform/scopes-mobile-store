@@ -58,7 +58,53 @@ teardown() {
 			}
 		]
 	}' "list_releases output"
-	assert_mock_call "$CURL_MOCK_CALLS_LOG" "curl -fsS -H Authorization: Bearer ya29.injected-token https://firebaseappdistribution.googleapis.com/v1/projects/726762523137/apps/1:726762523137:android:a700b1fa49f91e41eb0e00/releases?pageSize=20"
+	assert_mock_call "$CURL_MOCK_CALLS_LOG" "curl -fsS --connect-timeout 10 --max-time 60 --retry 2 -H @- https://firebaseappdistribution.googleapis.com/v1/projects/726762523137/apps/1:726762523137:android:a700b1fa49f91e41eb0e00/releases?pageSize=20"
+}
+
+@test "Should send the bearer token through stdin, never in the curl arguments" {
+	export CURL_MOCK_STDIN_LOG="$TEST_TMP_DIR/curl_stdin.log"
+
+	run bash "$SCRIPT"
+
+	assert_equal "$status" "0"
+	assert_mock_call "$CURL_MOCK_STDIN_LOG" "Authorization: Bearer ya29.injected-token"
+	run cat "$CURL_MOCK_CALLS_LOG"
+	refute_output_contains "ya29.injected-token"
+}
+
+@test "Should remove the service account file when it finishes" {
+	export GOOGLE_APPLICATION_CREDENTIALS="$WORKDIR/firebase-sa.json"
+	echo '{}' > "$GOOGLE_APPLICATION_CREDENTIALS"
+
+	run bash "$SCRIPT"
+	assert_equal "$status" "0"
+	assert_file_not_exists "$GOOGLE_APPLICATION_CREDENTIALS"
+
+	echo '{}' > "$GOOGLE_APPLICATION_CREDENTIALS"
+	export CURL_MOCK_FAIL="403"
+	run bash "$SCRIPT"
+	assert_equal "$status" "1"
+	assert_file_not_exists "$GOOGLE_APPLICATION_CREDENTIALS"
+}
+
+@test "Should not remove a credentials file outside the workdir" {
+	export GOOGLE_APPLICATION_CREDENTIALS="$TEST_TMP_DIR/my-own-sa.json"
+	echo '{}' > "$GOOGLE_APPLICATION_CREDENTIALS"
+
+	run bash "$SCRIPT"
+
+	assert_equal "$status" "0"
+	assert_file_exists "$GOOGLE_APPLICATION_CREDENTIALS"
+}
+
+@test "Should keep stdout as JSON when the API answers something that is not JSON" {
+	printf 'not json' > "$TEST_TMP_DIR/bad.json"
+	export CURL_MOCK_RESPONSE="$TEST_TMP_DIR/bad.json"
+
+	run bash -c "bash '$SCRIPT' 2>/dev/null"
+
+	assert_equal "$status" "1"
+	assert_json_equal "$output" '{"results": []}' "stdout on a bad answer"
 }
 
 @test "Should query every platform of the scope" {
@@ -68,7 +114,7 @@ teardown() {
 	run bash "$SCRIPT"
 
 	assert_equal "$status" "0"
-	assert_mock_call "$CURL_MOCK_CALLS_LOG" "curl -fsS -H Authorization: Bearer ya29.injected-token https://firebaseappdistribution.googleapis.com/v1/projects/726762523137/apps/1:726762523137:ios:b811c2fb50a02f52fc1f11/releases?pageSize=20"
+	assert_mock_call "$CURL_MOCK_CALLS_LOG" "curl -fsS --connect-timeout 10 --max-time 60 --retry 2 -H @- https://firebaseappdistribution.googleapis.com/v1/projects/726762523137/apps/1:726762523137:ios:b811c2fb50a02f52fc1f11/releases?pageSize=20"
 	assert_equal "$(echo "$output" | jq -r '.results | length')" "4"
 	assert_equal "$(echo "$output" | jq -r '[.results[].platform] | unique | join(",")')" "android,ios"
 }

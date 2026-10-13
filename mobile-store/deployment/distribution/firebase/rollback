@@ -12,6 +12,9 @@
 #
 # Limitation: testers who already installed the rolled-back build keep it;
 # the rollback only changes what the group sees as the latest release.
+# The previous binary goes through the same checks as a deployment (assets
+# bucket, archive layout, signing layer). The service account file written
+# by the layer setup is deleted on exit.
 #
 # Inputs: PREVIOUS_DEPLOYMENT_ID, PREVIOUS_RELEASE_SEMVER, PLATFORMS, CHANNEL,
 # SIGNING_LAYER, FIREBASE_* (from the layer setup), RELEASE_SEMVER, DIMENSION,
@@ -25,6 +28,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOYMENT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # shellcheck source=mobile-store/deployment/distribution/firebase/distribute
 source "$SCRIPT_DIR/distribute"
+
+firebase_remove_credentials_on_exit
 
 if [ -z "${PREVIOUS_DEPLOYMENT_ID:-}" ]; then
 	{
@@ -103,12 +108,9 @@ source "$DEPLOYMENT_DIR/signing/$SIGNING_LAYER/setup"
 
 export WORKDIR="$DISTRIBUTION_WORKDIR"
 firebase_require_setup || exit 1
-firebase_distribution_init "$(jq -nc --arg semver "$PREVIOUS_RELEASE_SEMVER" '{rollback_to: $semver}')"
+firebase_distribution_init "$(jq -nc --arg semver "$PREVIOUS_RELEASE_SEMVER" '{rollback_to: $semver}')" || exit 1
 
 release_notes="$APPLICATION_SLUG rollback to $PREVIOUS_RELEASE_SEMVER ($DIMENSION) deployment $DEPLOYMENT_ID"
-for platform in $PLATFORMS; do
-	binary_var="SIGNED_BINARY_PATH_$(echo "$platform" | tr '[:lower:]' '[:upper:]')"
-	firebase_distribute "$platform" "${!binary_var}" "$release_notes" || exit 1
-done
+firebase_distribute_all "$release_notes" || exit 1
 
 echo "✨ Rolled back to release $PREVIOUS_RELEASE_SEMVER on Firebase App Distribution: $(firebase_distribution_file)"

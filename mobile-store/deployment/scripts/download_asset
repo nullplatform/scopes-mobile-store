@@ -5,7 +5,7 @@
 # Usage: download_asset <url> <destination>
 #
 # s3://bucket/key  -> aws s3 cp (region ASSETS_REGION, default us-east-1)
-# https://...      -> curl -fsSL
+# https://...      -> curl -fsSL, https only (also on redirects), with timeouts
 #
 # Only urls inside ASSETS_BUCKET are accepted (see scripts/validators).
 # Prints the CLI error on failure and exits 1; the caller adds the causes.
@@ -33,7 +33,8 @@ case "$url" in
 		aws s3 cp "$url" "$destination" --region "${ASSETS_REGION:-us-east-1}"
 		;;
 	https://*)
-		curl -fsSL -o "$destination" "$url"
+		curl -fsSL --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 300 --retry 2 \
+			-o "$destination" "$url"
 		;;
 	*)
 		echo "   ❌ Unsupported asset url '$url': only s3:// and https:// are supported" >&2

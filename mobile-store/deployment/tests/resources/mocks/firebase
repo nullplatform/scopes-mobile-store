@@ -13,6 +13,14 @@
 #       FIREBASE_MOCK_FAIL=permission  -> Error: HTTP Error: 403, PERMISSION_DENIED
 #       FIREBASE_MOCK_FAIL=notfound    -> Error: HTTP Error: 404, App not found
 #       FIREBASE_MOCK_FAIL=other       -> Error: HTTP Error: 500, Internal error
+#       FIREBASE_MOCK_FAIL=unauthorized    -> HTTP Error: 401 (expired or revoked key)
+#       FIREBASE_MOCK_FAIL=invalid_grant   -> invalid_grant: Invalid JWT Signature
+#       FIREBASE_MOCK_FAIL=unauthenticated -> UNAUTHENTICATED status
+#       FIREBASE_MOCK_FAIL_PLATFORM=<android|ios> limits the failure to the
+#       apps of that platform (the other platform succeeds).
+#       The console link follows the real one:
+#       .../appdistribution/app/<platform>:<package>/releases/<id>, with the
+#       package from FIREBASE_MOCK_PACKAGE (default ar.io.nullplatform.sample).
 #
 # When FIREBASE_MOCK_LOG is set every invocation is appended as "firebase <args>".
 # =============================================================================
@@ -34,7 +42,24 @@ case "${1:-}" in
         *) shift ;;
       esac
     done
-    case "${FIREBASE_MOCK_FAIL:-}" in
+    platform=$(echo "$app_id" | cut -d: -f3)
+    fail="${FIREBASE_MOCK_FAIL:-}"
+    if [ -n "${FIREBASE_MOCK_FAIL_PLATFORM:-}" ] && [ "$platform" != "$FIREBASE_MOCK_FAIL_PLATFORM" ]; then
+      fail=""
+    fi
+    case "$fail" in
+      unauthorized)
+        echo "Error: HTTP Error: 401, Request had invalid authentication credentials. Expected OAuth 2 access token, login cookie or other valid authentication credential." >&2
+        exit 1
+        ;;
+      invalid_grant)
+        echo "Error: Failed to authenticate: invalid_grant: Invalid JWT Signature." >&2
+        exit 1
+        ;;
+      unauthenticated)
+        echo "Error: Request failed with status UNAUTHENTICATED" >&2
+        exit 1
+        ;;
       permission)
         echo "i  uploading binary..."
         echo "Error: HTTP Error: 403, PERMISSION_DENIED" >&2
@@ -61,7 +86,7 @@ case "${1:-}" in
     case "${FIREBASE_MOCK_OUTPUT:-console}" in
       release-name) echo "i  release: projects/$project_number/apps/$app_id/releases/$release_id" ;;
       bare) ;;
-      *) echo "i  View this release in the Firebase console: https://console.firebase.google.com/project/np-mobile-pc/appdistribution/app/$app_id/releases/$release_id" ;;
+      *) echo "i  View this release in the Firebase console: https://console.firebase.google.com/project/np-mobile-pc/appdistribution/app/$platform:${FIREBASE_MOCK_PACKAGE:-ar.io.nullplatform.sample}/releases/$release_id" ;;
     esac
     exit 0
     ;;

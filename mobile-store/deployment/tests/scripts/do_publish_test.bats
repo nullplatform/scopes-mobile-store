@@ -251,3 +251,15 @@ setup_google_play() {
 	assert_equal "$status" "1"
 	assert_line "   ❌ Unknown channel 'beta': cannot apply the approval gate policy"
 }
+
+@test "Should keep the rollout percentage the distribution layer reports" {
+	cat > "$SERVICE_PATH/deployment/distribution/fake/publish" <<'EOF'
+#!/bin/bash
+printf '{"provider":"fake","rollout_percentage":100,"releases":{}}' > "$WORKDIR/distribution.json"
+EOF
+
+	run bash "$SCRIPT"
+
+	assert_equal "$status" "0"
+	assert_equal "$(jq -r '.rollout_percentage' "$WORKDIR/distribution.json")" "100"
+}

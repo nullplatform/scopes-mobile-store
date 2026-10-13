@@ -52,6 +52,7 @@ base64url_decode() {
 
 	local call assertion header claims
 	call=$(grep -F "https://oauth2.googleapis.com/token" "$CURL_MOCK_CALLS_LOG")
+	assert_contains "$call" "curl -fsS --connect-timeout 10 --max-time 60 --retry 2 -X POST https://oauth2.googleapis.com/token "
 	assert_contains "$call" "--data-urlencode grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer"
 	assertion=$(echo "$call" | sed 's/.*--data-urlencode assertion=//; s/ .*//')
 	header=$(base64url_decode "$(echo "$assertion" | cut -d. -f1)")
@@ -103,4 +104,32 @@ base64url_decode() {
 	assert_equal "$status" "1"
 	assert_line "   ❌ GOOGLE_APPLICATION_CREDENTIALS is not set"
 	assert_line "    • The distribution/firebase layer setup did not run before this step"
+}
+
+@test "Should refuse a token_uri other than the Google token endpoint" {
+	local uri
+	for uri in "https://evil.example.com/token" "http://oauth2.googleapis.com/token" "https://oauth2.googleapis.com/token?x=1" "https://oauth2.googleapis.com.evil.example.com/token"; do
+		jq --arg uri "$uri" '.token_uri = $uri' "$GOOGLE_APPLICATION_CREDENTIALS" > "$TEST_TMP_DIR/sa.json"
+		cp "$TEST_TMP_DIR/sa.json" "$GOOGLE_APPLICATION_CREDENTIALS"
+
+		run bash "$SCRIPT"
+
+		assert_equal "$status" "1"
+		assert_line "   ❌ Unexpected token_uri '$uri' in the service account: only https://oauth2.googleapis.com/token is allowed"
+		assert_line "  💡 Possible causes:"
+		assert_line "    • The credentials secret does not hold a key downloaded from Google Cloud, or it was tampered with"
+		assert_line "  🔧 How to fix:"
+		assert_line "    • Store the JSON key exactly as Google Cloud generated it in the credentials secret"
+		[ ! -f "$CURL_MOCK_CALLS_LOG" ]
+	done
+}
+
+@test "Should accept a service account without token_uri" {
+	jq 'del(.token_uri)' "$GOOGLE_APPLICATION_CREDENTIALS" > "$TEST_TMP_DIR/sa.json"
+	cp "$TEST_TMP_DIR/sa.json" "$GOOGLE_APPLICATION_CREDENTIALS"
+
+	run bash "$SCRIPT"
+
+	assert_equal "$status" "0"
+	assert_equal "$output" "ya29.mock-access-token"
 }
