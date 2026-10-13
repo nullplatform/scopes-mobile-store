@@ -19,7 +19,7 @@ setup() {
 	SCRIPT="$DEPLOYMENT_DIR/distribution/firebase/list_releases"
 
 	export FIREBASE_PROJECT="np-mobile-poc"
-	export FIREBASE_APP_ID_ANDROID="1:123:android:abc"
+	export FIREBASE_APP_ID_ANDROID="1:726762523137:android:a700b1fa49f91e41eb0e00"
 	export FIREBASE_ACCESS_TOKEN="ya29.injected-token"
 	export CURL_MOCK_RESPONSE="$MOCKS_DIR/firebase_api/releases_android.json"
 }
@@ -36,39 +36,39 @@ teardown() {
 		"results": [
 			{
 				"platform": "android",
-				"app_id": "1:123:android:abc",
-				"release": "projects/123/apps/1:123:android:abc/releases/0abcdef",
+				"app_id": "1:726762523137:android:a700b1fa49f91e41eb0e00",
+				"release": "projects/726762523137/apps/1:726762523137:android:a700b1fa49f91e41eb0e00/releases/0abcdef",
 				"version": "1.0.0",
 				"build": "10",
 				"created_at": "2025-12-22T18:30:00.000Z",
 				"release_notes": "sample 1.0.0 (uat) deployment 77",
 				"console_url": "https://console.firebase.google.com/project/np-mobile-poc/appdistribution/app/android:ar.io.nullplatform.sample/releases/0abcdef",
-				"testing_url": "https://appdistribution.firebase.google.com/testerapps/1:123:android:abc/releases/0abcdef"
+				"testing_url": "https://appdistribution.firebase.google.com/testerapps/1:726762523137:android:a700b1fa49f91e41eb0e00/releases/0abcdef"
 			},
 			{
 				"platform": "android",
-				"app_id": "1:123:android:abc",
-				"release": "projects/123/apps/1:123:android:abc/releases/0fedcba",
+				"app_id": "1:726762523137:android:a700b1fa49f91e41eb0e00",
+				"release": "projects/726762523137/apps/1:726762523137:android:a700b1fa49f91e41eb0e00/releases/0fedcba",
 				"version": "0.9.0",
 				"build": "9",
 				"created_at": "2025-12-15T09:05:00.000Z",
 				"release_notes": null,
 				"console_url": "https://console.firebase.google.com/project/np-mobile-poc/appdistribution/app/android:ar.io.nullplatform.sample/releases/0fedcba",
-				"testing_url": "https://appdistribution.firebase.google.com/testerapps/1:123:android:abc/releases/0fedcba"
+				"testing_url": "https://appdistribution.firebase.google.com/testerapps/1:726762523137:android:a700b1fa49f91e41eb0e00/releases/0fedcba"
 			}
 		]
 	}' "list_releases output"
-	assert_mock_call "$CURL_MOCK_CALLS_LOG" "curl -fsS -H Authorization: Bearer ya29.injected-token https://firebaseappdistribution.googleapis.com/v1/projects/123/apps/1:123:android:abc/releases?pageSize=20"
+	assert_mock_call "$CURL_MOCK_CALLS_LOG" "curl -fsS -H Authorization: Bearer ya29.injected-token https://firebaseappdistribution.googleapis.com/v1/projects/726762523137/apps/1:726762523137:android:a700b1fa49f91e41eb0e00/releases?pageSize=20"
 }
 
 @test "Should query every platform of the scope" {
 	export PLATFORMS="android ios"
-	export FIREBASE_APP_ID_IOS="1:123:ios:def"
+	export FIREBASE_APP_ID_IOS="1:726762523137:ios:b811c2fb50a02f52fc1f11"
 
 	run bash "$SCRIPT"
 
 	assert_equal "$status" "0"
-	assert_mock_call "$CURL_MOCK_CALLS_LOG" "curl -fsS -H Authorization: Bearer ya29.injected-token https://firebaseappdistribution.googleapis.com/v1/projects/123/apps/1:123:ios:def/releases?pageSize=20"
+	assert_mock_call "$CURL_MOCK_CALLS_LOG" "curl -fsS -H Authorization: Bearer ya29.injected-token https://firebaseappdistribution.googleapis.com/v1/projects/726762523137/apps/1:726762523137:ios:b811c2fb50a02f52fc1f11/releases?pageSize=20"
 	assert_equal "$(echo "$output" | jq -r '.results | length')" "4"
 	assert_equal "$(echo "$output" | jq -r '[.results[].platform] | unique | join(",")')" "android,ios"
 }
@@ -79,7 +79,7 @@ teardown() {
 	run bash "$SCRIPT"
 
 	assert_equal "$status" "1"
-	assert_line "   ❌ Could not list the releases of the android app 1:123:android:abc"
+	assert_line "   ❌ Could not list the releases of the android app 1:726762523137:android:a700b1fa49f91e41eb0e00"
 	assert_line "  💡 Possible causes:"
 	assert_line "    • The service account lacks the Firebase App Distribution Viewer role on project 'np-mobile-poc'"
 	assert_line "    • The app id is wrong"

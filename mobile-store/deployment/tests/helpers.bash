@@ -92,8 +92,10 @@ setup_layer_test() {
 	export CONTEXT
 	CONTEXT=$(cat "$RESOURCES_DIR/context_initial.json")
 	export SCOPE_CONFIGURATION
+	# Real-looking ids: the layers validate their shape before using them.
 	SCOPE_CONFIGURATION=$(echo "$CONTEXT" | jq -c '.providers["scope-configurations"]
-		| .android.keystore_secret = "mobile/android-keystore"')
+		| .android.keystore_secret = "mobile/android-keystore"
+		| .firebase.app_id_android = "1:726762523137:android:a700b1fa49f91e41eb0e00"')
 
 	export DIMENSION="uat"
 	export PLATFORMS="android"

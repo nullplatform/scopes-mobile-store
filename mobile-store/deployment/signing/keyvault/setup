@@ -22,6 +22,9 @@
 # publishes ios. Sourced by the workflow: returns 1 on failure, never exits.
 # =============================================================================
 
+# shellcheck source=mobile-store/deployment/scripts/validators
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../scripts/validators"
+
 echo "🔍 Signing layer 'keyvault': signing with the keystore stored in the secrets manager"
 
 keyvault_fail_secret_read() {
@@ -85,6 +88,11 @@ if [ -z "$keyvault_secret" ]; then
 		echo "  🔧 How to fix:"
 		echo "    • Set android.keystore_secret to the name of the secret that holds the release keystore"
 	} >&2
+	keyvault_cleanup
+	return 1
+fi
+
+if ! validate_scope_secret_name "$keyvault_secret" "android.keystore_secret" "mobile/android-keystore"; then
 	keyvault_cleanup
 	return 1
 fi

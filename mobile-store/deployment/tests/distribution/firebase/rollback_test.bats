@@ -20,7 +20,7 @@ setup() {
 	SCRIPT="$DEPLOYMENT_DIR/distribution/firebase/rollback"
 
 	export FIREBASE_PROJECT="np-mobile-poc"
-	export FIREBASE_APP_ID_ANDROID="1:123:android:abc"
+	export FIREBASE_APP_ID_ANDROID="1:726762523137:android:a700b1fa49f91e41eb0e00"
 	export GOOGLE_APPLICATION_CREDENTIALS="$WORKDIR/firebase-sa.json"
 	echo '{}' > "$GOOGLE_APPLICATION_CREDENTIALS"
 }
@@ -56,12 +56,12 @@ teardown() {
 	assert_line "   ✅ android: android-uat of release 0.9.0 -> s3://assets-aws-mobile/mobile/442353687/442353600/uat/app-release.apk"
 	assert_line "   📡 Downloading s3://assets-aws-mobile/mobile/442353687/442353600/uat/app-release.apk to $WORKDIR/rollback/android/app.apk"
 	assert_line "   ✅ android: using the CI-signed binary $WORKDIR/rollback/android/app.apk"
-	assert_line "   ✅ android: distributed to Firebase group 'internal' (release projects/123/apps/1:123:android:abc/releases/0abcdef)"
+	assert_line "   ✅ android: distributed to Firebase group 'internal' (release projects/726762523137/apps/1:726762523137:android:a700b1fa49f91e41eb0e00/releases/0abcdef)"
 	assert_line "✨ Rolled back to release 0.9.0 on Firebase App Distribution: $WORKDIR/distribution.json"
 	assert_np_called "np release list --application-id 442353687 --limit 200 --format json"
 	assert_np_called "np asset list --build-id 442353600 --format json"
 	assert_mock_call "$AWS_MOCK_CALLS_LOG" "aws s3 cp s3://assets-aws-mobile/mobile/442353687/442353600/uat/app-release.apk $WORKDIR/rollback/android/app.apk --region us-east-1"
-	assert_mock_call "$FIREBASE_MOCK_LOG" "firebase appdistribution:distribute $WORKDIR/rollback/android/app.apk --app 1:123:android:abc --project np-mobile-poc --groups internal --release-notes sample rollback to 0.9.0 (uat) deployment 77 --non-interactive"
+	assert_mock_call "$FIREBASE_MOCK_LOG" "firebase appdistribution:distribute $WORKDIR/rollback/android/app.apk --app 1:726762523137:android:a700b1fa49f91e41eb0e00 --project np-mobile-poc --groups internal --release-notes sample rollback to 0.9.0 (uat) deployment 77 --non-interactive"
 	assert_json_equal "$(cat "$WORKDIR/distribution.json")" '{
 		"provider": "firebase",
 		"project": "np-mobile-poc",
@@ -69,8 +69,8 @@ teardown() {
 		"rollback_to": "0.9.0",
 		"releases": {
 			"android": {
-				"app_id": "1:123:android:abc",
-				"name": "projects/123/apps/1:123:android:abc/releases/0abcdef",
+				"app_id": "1:726762523137:android:a700b1fa49f91e41eb0e00",
+				"name": "projects/726762523137/apps/1:726762523137:android:a700b1fa49f91e41eb0e00/releases/0abcdef",
 				"group": "internal"
 			}
 		}

@@ -15,6 +15,9 @@
 # project. Sourced by the workflow: returns 1 on failure, never exits.
 # =============================================================================
 
+# shellcheck source=mobile-store/deployment/scripts/validators
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../scripts/validators"
+
 echo "🔍 Validating Firebase App Distribution configuration..."
 
 firebase_config() {
@@ -37,6 +40,9 @@ firebase_missing_platforms=""
 if [ -z "$FIREBASE_PROJECT" ]; then
 	echo "   ❌ firebase.project is missing"
 	firebase_missing="$firebase_missing, firebase.project"
+elif ! validate_firebase_project "$FIREBASE_PROJECT"; then
+	firebase_cleanup
+	return 1
 else
 	echo "   ✅ firebase_project=$FIREBASE_PROJECT"
 fi
@@ -52,6 +58,9 @@ for firebase_platform in ${PLATFORMS:-}; do
 		echo "   ❌ firebase.app_id_$firebase_platform is missing"
 		firebase_missing="$firebase_missing, firebase.app_id_$firebase_platform"
 		firebase_missing_platforms="$firebase_missing_platforms $firebase_platform"
+	elif ! validate_firebase_app_id "$firebase_platform" "$firebase_app_id"; then
+		firebase_cleanup
+		return 1
 	else
 		echo "   ✅ firebase_app_id_$firebase_platform=$firebase_app_id"
 		export "FIREBASE_APP_ID_$firebase_platform_upper=$firebase_app_id"
@@ -86,6 +95,11 @@ if ! command -v firebase >/dev/null 2>&1; then
 		echo "  🔧 How to fix:"
 		echo "    • Build the worker image from this repository's Dockerfile (it installs firebase-tools@${FIREBASE_CLI_VERSION:-14}) and pin it in the agent"
 	} >&2
+	firebase_cleanup
+	return 1
+fi
+
+if ! validate_scope_secret_name "$FIREBASE_CREDENTIALS_SECRET" "firebase.credentials_secret" "mobile/firebase-sa"; then
 	firebase_cleanup
 	return 1
 fi

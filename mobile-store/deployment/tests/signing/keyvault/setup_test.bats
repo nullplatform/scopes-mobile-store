@@ -192,3 +192,23 @@ EOF
 	assert_line "   ❌ BINARY_PATH_ANDROID is not set"
 	assert_line "    • The platform/android layer did not run before the signing layer"
 }
+
+# =============================================================================
+# Hardening: only secrets under mobile/ can be read
+# =============================================================================
+@test "Should reject a keystore secret outside the mobile/ namespace without reading it" {
+	local secret
+	for secret in "prod/database-password" "mobile" "mobile/../prod/key" "arn:aws:secretsmanager:us-east-1:123:secret:mobile/x"; do
+		with_scope_configuration ".android.keystore_secret = \"$secret\""
+
+		run source "$SCRIPT"
+
+		assert_equal "$status" "1"
+		assert_line "   ❌ Secret name '$secret' is outside the mobile/ namespace (android.keystore_secret)"
+		assert_line "  💡 Possible causes:"
+		assert_line "    • The 'Mobile store' scope configuration names a secret this scope is not allowed to read"
+		assert_line "  🔧 How to fix:"
+		assert_line "    • Store the secret under the mobile/ prefix (e.g. mobile/android-keystore) and set android.keystore_secret to that name"
+		[ ! -f "$AWS_MOCK_CALLS_LOG" ]
+	done
+}

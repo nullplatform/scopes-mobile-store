@@ -7,10 +7,14 @@
 # s3://bucket/key  -> aws s3 cp (region ASSETS_REGION, default us-east-1)
 # https://...      -> curl -fsSL
 #
+# Only urls inside ASSETS_BUCKET are accepted (see scripts/validators).
 # Prints the CLI error on failure and exits 1; the caller adds the causes.
 # =============================================================================
 
 set -euo pipefail
+
+# shellcheck source=mobile-store/deployment/scripts/validators
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/validators"
 
 url="${1:-}"
 destination="${2:-}"
@@ -19,6 +23,8 @@ if [ -z "$url" ] || [ -z "$destination" ]; then
 	echo "   ❌ Usage: download_asset <url> <destination>" >&2
 	exit 1
 fi
+
+validate_asset_url "$url" || exit 1
 
 mkdir -p "$(dirname "$destination")"
 
