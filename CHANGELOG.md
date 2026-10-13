@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/nullplatform/scopes-mobile-store/compare/v0.1.0...v0.1.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **ci:** push the worker image to the scopes/mobile-store ECR Public repository ([1d82142](https://github.com/nullplatform/scopes-mobile-store/commit/1d8214285824de8f2b376ba3459369970c72a6a6))
+
 ## [0.1.0](https://github.com/nullplatform/scopes-mobile-store/compare/v1.0.0...v0.1.0) (2026-10-13)
 
 
