@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.0](https://github.com/nullplatform/scopes-mobile-store/compare/v0.3.0...v0.4.0) (2026-10-13)
+
+
+### Features
+
+* **mobile-store:** assume the scope IAM role before AWS calls ([a92572e](https://github.com/nullplatform/scopes-mobile-store/commit/a92572ebf60d77e05a0973927ed12739dab30837))
+* **mobile-store:** wire deployment, scope and instance workflows ([031a31e](https://github.com/nullplatform/scopes-mobile-store/commit/031a31e6f8873638880777cff65dce01452d5e2c))
+
+
+### Bug Fixes
+
+* **mobile-store:** address the remaining layer review findings ([b86c53f](https://github.com/nullplatform/scopes-mobile-store/commit/b86c53fe8df80a2694ecfc8c16f4b4e1ee67f6c8))
+* **mobile-store:** address workflow review findings ([950b41b](https://github.com/nullplatform/scopes-mobile-store/commit/950b41b43a1dd1aab1a59cce9582e55b70a352d0))
+* **mobile-store:** answer instance:data only for telemetry requests ([24bd99f](https://github.com/nullplatform/scopes-mobile-store/commit/24bd99fa7d4a91122e09a9b8495a18bd83df2d55))
+* **mobile-store:** isolate instance workdirs and let rollbacks skip current assets ([d08b28e](https://github.com/nullplatform/scopes-mobile-store/commit/d08b28e40e6afd8a02db6e43e43e0424aff0479e))
+
 ## [0.3.0](https://github.com/nullplatform/scopes-mobile-store/compare/v0.2.0...v0.3.0) (2026-10-13)
 
 
