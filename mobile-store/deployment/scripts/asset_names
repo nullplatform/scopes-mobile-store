@@ -1,0 +1,85 @@
+#!/bin/bash
+# =============================================================================
+# Asset names: which asset of a release is the binary of each platform.
+# Sourced by build_context, resolve_release_asset, ensure_asset_name and the
+# distribution layers; defines functions only.
+#
+# The scope's asset_name is the source of truth. The platform picks the asset
+# with that name from the release and passes it as CONTEXT.asset, so:
+#   - the first platform of the scope (PLATFORMS) deploys exactly asset_name;
+#   - the other platform of a 'both' scope swaps the platform prefix:
+#     'android-production' -> 'ios-production', 'android' -> 'ios'. Any other
+#     name cannot be derived and fails.
+# A scope without asset_name defaults to its first platform ('android').
+#
+#   validate_asset_name <name> [suggestion]
+#   platform_asset_name <asset name> <primary platform> <platform>
+#   resolve_scope_asset_name <primary platform>
+#       sets RESOLVED_ASSET_NAME and RESOLVED_ASSET_NAME_SOURCE
+#       (context | scope | default)
+# =============================================================================
+
+ASSET_NAME_PATTERN='^[a-z0-9][a-z0-9._-]*$'
+
+asset_name_patch_hint() {
+	echo "    • np scope patch --id ${SCOPE_ID:-<scope id>} --body '{\"asset_name\":\"$1\"}'"
+}
+
+validate_asset_name() {
+	local name="$1" suggestion="${2:-android}"
+	[[ "$name" =~ $ASSET_NAME_PATTERN ]] && return 0
+	{
+		echo "   ❌ Invalid asset name '$name': it must match $ASSET_NAME_PATTERN (lowercase letters, digits, dots, underscores and dashes, starting with a letter or digit)"
+		echo "  💡 Possible causes:"
+		echo "    • The scope's asset name was set by hand with unsupported characters"
+		echo "  🔧 How to fix:"
+		asset_name_patch_hint "$suggestion"
+	} >&2
+	return 1
+}
+
+platform_asset_name() {
+	local asset_name="$1" primary="$2" platform="$3"
+	if [ "$platform" = "$primary" ]; then
+		echo "$asset_name"
+	elif [ "$asset_name" = "$primary" ]; then
+		echo "$platform"
+	elif [[ "$asset_name" == "$primary"* ]]; then
+		echo "$platform${asset_name#"$primary"}"
+	else
+		{
+			echo "   ❌ Cannot derive the $platform asset name from the scope's asset name '$asset_name'"
+			echo "  💡 Possible causes:"
+			echo "    • The scope deploys $primary and $platform, and its asset name does not start with '$primary' (its first platform)"
+			echo "  🔧 How to fix:"
+			echo "    • For a scope with both platforms, name its asset '$primary' or '$primary-<suffix>': the $platform binary is then '$platform' or '$platform-<suffix>'"
+			asset_name_patch_hint "$primary"
+		} >&2
+		return 1
+	fi
+}
+
+# RESOLVED_ASSET_NAME and RESOLVED_ASSET_NAME_SOURCE are read by the callers.
+# shellcheck disable=SC2034
+resolve_scope_asset_name() {
+	local primary="$1" name="" scope
+	RESOLVED_ASSET_NAME=""
+	RESOLVED_ASSET_NAME_SOURCE=""
+
+	if [ -n "${CONTEXT:-}" ]; then
+		name=$(echo "$CONTEXT" | jq -r '.scope.asset_name // empty' 2>/dev/null || true)
+	fi
+	if [ -n "$name" ]; then
+		RESOLVED_ASSET_NAME_SOURCE="context"
+	elif [ -n "${SCOPE_ID:-}" ] && scope=$(np scope read --id "$SCOPE_ID" --format json 2>/dev/null); then
+		name=$(echo "$scope" | jq -r '.asset_name // empty' 2>/dev/null || true)
+		[ -n "$name" ] && RESOLVED_ASSET_NAME_SOURCE="scope"
+	fi
+	if [ -z "$name" ]; then
+		name="$primary"
+		RESOLVED_ASSET_NAME_SOURCE="default"
+	fi
+
+	validate_asset_name "$name" "$primary" || return 1
+	RESOLVED_ASSET_NAME="$name"
+}

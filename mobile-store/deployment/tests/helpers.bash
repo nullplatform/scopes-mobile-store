@@ -111,7 +111,8 @@ setup_layer_test() {
 	export ASSETS_BUCKET="assets-aws-mobile"
 	export ASSETS_REGION="us-east-1"
 	export ASSET_TYPE="bundle"
-	export ASSETS_JSON='{"android":{"url":"s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk","asset_id":6,"build_id":10}}'
+	export ASSET_NAME="android-uat"
+	export ASSETS_JSON='{"android":{"url":"s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk","asset_id":6,"build_id":10,"name":"android-uat"}}'
 	export ANDROID_PACKAGE="ar.io.nullplatform.sample"
 	export IOS_BUNDLE_ID=""
 	export PREVIOUS_DEPLOYMENT_ID="70"
@@ -134,6 +135,7 @@ setup_layer_test() {
 	export NP_MOCK_ASSET_LIST="$MOCKS_DIR/asset_list_previous.json"
 	export NP_MOCK_DEPLOYMENT_PATCH="$MOCKS_DIR/deployment_patch.json"
 
+	unset NP_MOCK_SCOPE_READ NP_MOCK_SCOPE_PATCH
 	unset BINARY_PATH_ANDROID BINARY_PATH_IOS SIGNED_BINARY_PATH_ANDROID SIGNED_BINARY_PATH_IOS
 	unset FIREBASE_PROJECT FIREBASE_APP_ID_ANDROID FIREBASE_APP_ID_IOS GOOGLE_APPLICATION_CREDENTIALS
 	unset GATE_RESULT FIREBASE_MOCK_FAIL FIREBASE_MOCK_OUTPUT AWS_MOCK_S3_FAIL APKSIGNER_MOCK_FAIL

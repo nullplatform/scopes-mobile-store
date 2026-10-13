@@ -47,6 +47,8 @@ steps:
         type: environment
       - name: ASSET_TYPE
         type: environment
+      - name: ASSET_NAME
+        type: environment
       - name: PREVIOUS_DEPLOYMENT_ID
         type: environment
       - name: PREVIOUS_RELEASE_SEMVER

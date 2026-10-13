@@ -17,7 +17,7 @@ setup() {
 	SCRIPT="$DEPLOYMENT_DIR/platform/ios/setup"
 
 	export PLATFORMS="ios"
-	export ASSETS_JSON='{"ios":{"url":"s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.ipa","asset_id":12,"build_id":10}}'
+	export ASSETS_JSON='{"ios":{"url":"s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.ipa","asset_id":12,"build_id":10,"name":"ios-uat"}}'
 	export AWS_MOCK_S3_OBJECT="$TEST_TMP_DIR/fixture.ipa"
 	make_fixture_ipa "$AWS_MOCK_S3_OBJECT"
 }

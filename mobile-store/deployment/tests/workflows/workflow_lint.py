@@ -56,11 +56,14 @@ CONSUMES = {
         AWS + ["DISTRIBUTION_LAYER", "PLATFORMS", "CHANNEL", "SIGNING_LAYER", "PREVIOUS_DEPLOYMENT_ID",
                "PREVIOUS_RELEASE_SEMVER", "FIREBASE_PROJECT", "FIREBASE_APP_ID_ANDROID",
                "GOOGLE_APPLICATION_CREDENTIALS", "ASSETS_BUCKET", "ASSET_TYPE", "SCOPE_CONFIGURATION",
-               "RELEASE_SEMVER", "APPLICATION_SLUG", "DIMENSION", "WORKDIR"],
+               "ASSET_NAME", "RELEASE_SEMVER", "APPLICATION_SLUG", "DIMENSION", "WORKDIR"],
         ["deployment/scripts/do_rollback", "deployment/distribution/*/rollback",
          "deployment/distribution/*/distribute", "deployment/scripts/resolve_release_asset",
          "deployment/scripts/validators", "deployment/scripts/download_asset",
          "deployment/platform/*/setup", "deployment/signing/*/setup"]),
+    "ensure_asset_name": (
+        ["PLATFORMS"],
+        ["deployment/scripts/ensure_asset_name"]),
     "record_rollout_state": (
         ["DISTRIBUTION_LAYER", "CHANNEL", "RELEASE_SEMVER"],
         ["deployment/scripts/record_rollout_state"]),

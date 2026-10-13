@@ -36,7 +36,7 @@ setup() {
 	export NP_MOCK_DEPLOYMENT_LIST="$MOCKS_DIR/deployment_list.json"
 	export NP_MOCK_RELEASE_READ="$MOCKS_DIR/release_read.json"
 
-	unset SIGNING_LAYER DISTRIBUTION_LAYER GATE_LAYER ASSETS_BUCKET ASSETS_REGION BUILD_CONTEXT_MODE BUILD_CONTEXT_REQUIRE WORKDIR_BASE SCOPE_ID
+	unset NP_MOCK_SCOPE_READ ASSET_NAME SIGNING_LAYER DISTRIBUTION_LAYER GATE_LAYER ASSETS_BUCKET ASSETS_REGION BUILD_CONTEXT_MODE BUILD_CONTEXT_REQUIRE WORKDIR_BASE SCOPE_ID
 }
 
 teardown() {
@@ -73,6 +73,7 @@ with_context() {
 	assert_equal "$NAMESPACE_SLUG" "mobile"
 	assert_equal "$SCOPE_SLUG" "store"
 	assert_equal "$ASSET_TYPE" "bundle"
+	assert_equal "$ASSET_NAME" "android-uat"
 
 	assert_equal "$SIGNING_LAYER" "prebuilt"
 	assert_equal "$DISTRIBUTION_LAYER" "firebase"
@@ -84,7 +85,8 @@ with_context() {
 	"android": {
 		"url": "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk",
 		"asset_id": 6,
-		"build_id": 10
+		"build_id": 10,
+		"name": "android-uat"
 	}
 	}'
 	assert_json_equal "$ASSETS_JSON" "$expected_assets" "ASSETS_JSON"
@@ -127,6 +129,7 @@ with_context() {
 	assert_line "   ✅ distribution_layer=firebase"
 	assert_line "   ✅ gate_layer=none"
 	assert_line "   ✅ assets_bucket=assets-aws-mobile (region us-east-1)"
+	assert_line "   📋 Asset name: android-uat (from the scope)"
 	assert_line "📡 Resolving build assets (type bundle, build 10)..."
 	assert_line "   ✅ android: android-uat -> s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk (release 1.0.0, build 10)"
 	assert_line "   📋 Previous deployment: 70 (release 0.9.0)"
@@ -154,12 +157,14 @@ with_context() {
 	"android": {
 		"url": "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk",
 		"asset_id": 6,
-		"build_id": 10
+		"build_id": 10,
+		"name": "android-uat"
 	},
 	"ios": {
 		"url": "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.ipa",
 		"asset_id": 12,
-		"build_id": 10
+		"build_id": 10,
+		"name": "ios-uat"
 	}
 	}'
 	assert_json_equal "$ASSETS_JSON" "$expected_assets" "ASSETS_JSON"
@@ -176,23 +181,24 @@ with_context() {
 	assert_equal "$status" "1"
 	assert_line "   ❌ No asset named 'ios-uat' of type 'bundle' in release 1.0.0"
 	assert_line "  💡 Possible causes:"
-	assert_line "    • The CI did not build a binary for the 'uat' environment"
-	assert_line "    • The asset was registered with another name"
+	assert_line "    • The CI did not register an asset named 'ios-uat' for this build"
+	assert_line "    • The scope's asset name does not match the name the CI registers"
 	assert_line "  🔧 How to fix:"
-	assert_line "    • Make the CI register an asset named 'ios-uat' (type bundle) for this build"
+	assert_line "    • Register an asset named 'ios-uat' (type bundle) in the CI, or change the scope's asset name"
 }
 
-@test "Should pick the asset by name for the prod dimension even when the context carries android-uat" {
-	with_context '.scope.dimensions.environment = "prod"'
+@test "Should pick the asset named by the scope even when the context carries another one" {
+	with_context '.scope.asset_name = "android-prod"'
 
 	run_build_context
 
-	assert_equal "$DIMENSION" "prod"
+	assert_equal "$ASSET_NAME" "android-prod"
 	local expected_assets='{
 	"android": {
 		"url": "s3://assets-aws-mobile/mobile/442353687/10/prod/app-release.apk",
 		"asset_id": 8,
-		"build_id": 10
+		"build_id": 10,
+		"name": "android-prod"
 	}
 	}'
 	assert_json_equal "$ASSETS_JSON" "$expected_assets" "ASSETS_JSON"
@@ -200,22 +206,34 @@ with_context() {
 	assert_np_called "np asset list --build-id 10 --format json"
 }
 
-@test "Should fail with an actionable message when the build has no asset for the dimension" {
-	with_context '.scope.dimensions.environment = "staging"'
+@test "Should not derive the asset name from the environment dimension" {
+	# The dimension says prod, the scope says android-uat: the scope wins.
+	with_context '.scope.dimensions.environment = "prod"'
+
+	run_build_context
+
+	assert_equal "$DIMENSION" "prod"
+	assert_equal "$ASSET_NAME" "android-uat"
+	assert_equal "$ASSET_URL" "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk"
+	refute_np_called "asset list"
+}
+
+@test "Should fail with an actionable message when the build has no asset with the scope's asset name" {
+	with_context '.scope.asset_name = "android-staging"'
 
 	run source "$SCRIPT"
 
 	assert_equal "$status" "1"
 	assert_line "   ❌ No asset named 'android-staging' of type 'bundle' in release 1.0.0"
 	assert_line "  💡 Possible causes:"
-	assert_line "    • The CI did not build a binary for the 'staging' environment"
-	assert_line "    • The asset was registered with another name"
+	assert_line "    • The CI did not register an asset named 'android-staging' for this build"
+	assert_line "    • The scope's asset name does not match the name the CI registers"
 	assert_line "  🔧 How to fix:"
-	assert_line "    • Make the CI register an asset named 'android-staging' (type bundle) for this build"
+	assert_line "    • Register an asset named 'android-staging' (type bundle) in the CI, or change the scope's asset name"
 }
 
 @test "Should warn and still fail when the asset listing itself fails" {
-	with_context '.scope.dimensions.environment = "prod"'
+	with_context '.scope.asset_name = "android-prod"'
 	unset NP_MOCK_ASSET_LIST
 
 	run source "$SCRIPT"
@@ -226,16 +244,17 @@ with_context() {
 }
 
 @test "Should use the default dimension when the scope has no environment dimension" {
-	with_context '.scope.dimensions = {} | .asset.name = "android-default"'
+	with_context '.scope.dimensions = {}'
 
 	run_build_context
 
 	assert_equal "$DIMENSION" "default"
+	assert_equal "$ASSET_NAME" "android-uat"
 	assert_equal "$ASSET_URL" "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk"
 }
 
 @test "Should filter the listed assets by the type of the asset in the context" {
-	with_context '.asset.type = "mobile-binary" | .scope.dimensions.environment = "prod"'
+	with_context '.asset.type = "mobile-binary" | .scope.asset_name = "android-prod"'
 	# The build lists an android-prod of type bundle: it must not match a mobile-binary scope.
 
 	run source "$SCRIPT"
@@ -243,8 +262,112 @@ with_context() {
 	assert_equal "$status" "1"
 	assert_line "📡 Resolving build assets (type mobile-binary, build 10)..."
 	assert_line "   ❌ No asset named 'android-prod' of type 'mobile-binary' in release 1.0.0"
-	assert_line "    • Make the CI register an asset named 'android-prod' (type mobile-binary) for this build"
+	assert_line "    • Register an asset named 'android-prod' (type mobile-binary) in the CI, or change the scope's asset name"
 	assert_np_called "np asset list --build-id 10 --format json"
+}
+
+# =============================================================================
+# Asset name: the scope's asset_name, read from the scope, or the platform
+# =============================================================================
+# Writes a build listing with one bundle per name, all of build 10.
+write_asset_listing() {
+	local names="$1"
+	jq -n --arg names "$names" '{results: ($names | split(" ") | to_entries | map({
+		id: (100 + .key), build_id: 10, name: .value, type: "bundle",
+		url: ("s3://assets-aws-mobile/mobile/442353687/10/" + .value + "/app"), metadata: {}
+	}))}' > "$TEST_TMP_DIR/assets.json"
+	export NP_MOCK_ASSET_LIST="$TEST_TMP_DIR/assets.json"
+}
+
+@test "Should read the asset name from the scope when the context does not carry it" {
+	with_context 'del(.scope.asset_name)'
+	echo '{"id": 7, "asset_name": "android-uat"}' > "$TEST_TMP_DIR/scope.json"
+	export NP_MOCK_SCOPE_READ="$TEST_TMP_DIR/scope.json"
+
+	run_build_context
+
+	assert_equal "$ASSET_NAME" "android-uat"
+	assert_equal "$ASSET_URL" "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk"
+	assert_np_called "np scope read --id 7 --format json"
+}
+
+@test "Should default the asset name to the platform when neither the context nor the scope has one" {
+	with_context 'del(.scope.asset_name) | .scope.capabilities.platform = "ios"'
+	echo '{"id": 7, "asset_name": null}' > "$TEST_TMP_DIR/scope.json"
+	export NP_MOCK_SCOPE_READ="$TEST_TMP_DIR/scope.json"
+	write_asset_listing "ios android"
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "0"
+	assert_line "   📋 Asset name: ios (default: the scope has no asset name)"
+	assert_line "   ✅ ios: ios -> s3://assets-aws-mobile/mobile/442353687/10/ios/app (release 1.0.0, build 10)"
+}
+
+@test "Should swap the platform prefix of the asset name for ios when platform is both" {
+	with_context '.scope.capabilities.platform = "both" | .scope.asset_name = "android-production"'
+	write_asset_listing "android-production ios-production ios-uat"
+
+	run_build_context
+
+	assert_equal "$ASSET_NAME" "android-production"
+	assert_equal "$(echo "$ASSETS_JSON" | jq -r '.android.name')" "android-production"
+	assert_equal "$(echo "$ASSETS_JSON" | jq -r '.ios.name')" "ios-production"
+	assert_equal "$(echo "$ASSETS_JSON" | jq -r '.ios.url')" "s3://assets-aws-mobile/mobile/442353687/10/ios-production/app"
+}
+
+@test "Should use ios as the ios asset when the asset name is android and platform is both" {
+	with_context '.scope.capabilities.platform = "both" | .scope.asset_name = "android"'
+	write_asset_listing "android ios"
+
+	run_build_context
+
+	assert_equal "$ASSET_NAME" "android"
+	assert_equal "$(echo "$ASSETS_JSON" | jq -r '.ios.name')" "ios"
+	assert_equal "$ASSET_URL" "s3://assets-aws-mobile/mobile/442353687/10/android/app"
+}
+
+@test "Should fail explaining the convention when the ios asset name cannot be derived for platform both" {
+	with_context '.scope.capabilities.platform = "both" | .scope.asset_name = "mobile-prod"'
+	write_asset_listing "mobile-prod ios-prod"
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Cannot derive the ios asset name from the scope's asset name 'mobile-prod'"
+	assert_line "    • For a scope with both platforms, name its asset 'android' or 'android-<suffix>': the ios binary is then 'ios' or 'ios-<suffix>'"
+	refute_np_called "asset list"
+}
+
+@test "Should reject an invalid asset name before listing assets" {
+	with_context '.scope.asset_name = "../prod"'
+
+	run source "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Invalid asset name '../prod': it must match ^[a-z0-9][a-z0-9._-]*\$ (lowercase letters, digits, dots, underscores and dashes, starting with a letter or digit)"
+	refute_np_called "asset list"
+}
+
+@test "Should resolve the asset name in rollback mode without listing the current assets" {
+	export BUILD_CONTEXT_MODE="rollback"
+	with_context '.scope.asset_name = "android-prod"'
+
+	run_build_context
+
+	assert_equal "$ASSET_NAME" "android-prod"
+	assert_equal "$ASSETS_JSON" "{}"
+	refute_np_called "asset list"
+}
+
+@test "Should not resolve the asset name in scope mode" {
+	export BUILD_CONTEXT_MODE="scope"
+	with_context 'del(.scope.asset_name)'
+
+	run_build_context
+
+	assert_empty "$ASSET_NAME" "ASSET_NAME"
+	refute_np_called "scope read"
 }
 
 @test "Should fail before listing assets when the release has no build id" {
@@ -270,7 +393,8 @@ with_context() {
 	"android": {
 		"url": "s3://assets-aws-mobile/mobile/442353687/10/uat/app-release.apk",
 		"asset_id": 6,
-		"build_id": 10
+		"build_id": 10,
+		"name": "android-uat"
 	}
 	}'
 	assert_json_equal "$ASSETS_JSON" "$expected_assets" "ASSETS_JSON"

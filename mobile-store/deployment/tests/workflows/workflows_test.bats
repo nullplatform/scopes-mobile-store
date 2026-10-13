@@ -103,7 +103,7 @@ print(",".join(s["name"] for s in steps))
 	assert_equal "$output" "check active rollout,assume role,build context,platform layers,setup signing layer,setup distribution layer,setup gate layer,publish"
 }
 
-@test "Should run the scope context and the layer checks on create and update" {
+@test "Should run the scope context, the asset name check and the layer checks on create and update" {
 	for action in create update; do
 		run python3 -c '
 import sys
@@ -113,7 +113,7 @@ steps, _ = workflow_lint.load(sys.argv[2], sys.argv[3])
 print(",".join("%s:%s" % (s["name"], (s.get("configuration") or {}).get("LAYER_CHECK", (s.get("configuration") or {}).get("BUILD_CONTEXT_MODE", ""))) for s in steps))
 ' "$TEST_DIR" "$SCOPE_DIR/scope/workflows/$action.yaml" "$SCOPE_DIR"
 
-		assert_equal "$output" "assume role:,build context:scope,check signing layer:true,check distribution layer:true,check gate layer:true"
+		assert_equal "$output" "assume role:,build context:scope,ensure asset name:,check signing layer:true,check distribution layer:true,check gate layer:true"
 	done
 }
 
