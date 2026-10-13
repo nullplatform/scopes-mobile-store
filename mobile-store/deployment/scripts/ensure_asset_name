@@ -1,0 +1,81 @@
+#!/bin/bash
+# =============================================================================
+# Make sure the scope has an asset_name
+#
+# The platform picks the asset of a release by the scope's asset_name and
+# rejects the deployment of a scope without one (a misleading 400). Scopes
+# created through the API do not carry it, so create-scope and update-scope
+# set it to the first platform of the scope (PLATFORMS: 'android' or 'ios')
+# when it is missing. An asset_name the scope already has is validated (format
+# and, for a scope with both platforms, that the other name can be derived;
+# see scripts/asset_names) and kept as is.
+#
+# Fails when the scope cannot be patched: without asset_name no deployment of
+# the scope works.
+#
+# Inputs: SCOPE_ID (else .scope.id of CONTEXT), PLATFORMS (build_context),
+# CONTEXT. Sourced by the workflow (works executed too).
+# =============================================================================
+
+# shellcheck source=mobile-store/deployment/scripts/asset_names
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/asset_names"
+
+mobile_store_ensure_asset_name() {
+	local scope_id primary current scope platform
+
+	scope_id="${SCOPE_ID:-$(echo "${CONTEXT:-null}" | jq -r '.scope.id // empty' 2>/dev/null)}"
+	if ! [[ "$scope_id" =~ ^[0-9]+$ ]]; then
+		{
+			echo "   ❌ Invalid scope id '$scope_id': must be an integer"
+			echo "  💡 Possible causes:"
+			echo "    • The context was not produced by the platform"
+			echo "  🔧 How to fix:"
+			echo "    • Run this workflow with np service workflow exec --build-context"
+		} >&2
+		return 1
+	fi
+	primary="${PLATFORMS:-android}"
+	primary="${primary%% *}"
+
+	echo "🔍 Checking the asset name of scope $scope_id..."
+
+	current=$(echo "${CONTEXT:-null}" | jq -r '.scope.asset_name // empty' 2>/dev/null || true)
+	if [ -z "$current" ]; then
+		if ! scope=$(np scope read --id "$scope_id" --format json 2>/dev/null); then
+			{
+				echo "   ❌ Could not read scope $scope_id to check its asset name"
+				echo "  💡 Possible causes:"
+				echo "    • The nullplatform API is unavailable or the agent API key cannot read the scope"
+				echo "  🔧 How to fix:"
+				echo "    • Retry the action; if it keeps failing, check the agent API key permissions on the scope"
+			} >&2
+			return 1
+		fi
+		current=$(echo "$scope" | jq -r '.asset_name // empty' 2>/dev/null || true)
+	fi
+
+	if [ -n "$current" ]; then
+		SCOPE_ID="$scope_id" validate_asset_name "$current" "$primary" || return 1
+		for platform in ${PLATFORMS:-$primary}; do
+			SCOPE_ID="$scope_id" platform_asset_name "$current" "$primary" "$platform" >/dev/null || return 1
+		done
+		echo "   ✅ Asset name: $current (set in the scope)"
+		return 0
+	fi
+
+	if ! np scope patch --id "$scope_id" --body "{\"asset_name\":\"$primary\"}" --format json >/dev/null 2>&1; then
+		{
+			echo "   ❌ Could not set the asset name of scope $scope_id to '$primary'"
+			echo "  💡 Possible causes:"
+			echo "    • The agent API key cannot update scopes"
+			echo "    • The nullplatform API is unavailable"
+			echo "  🔧 How to fix:"
+			echo "    • np scope patch --id $scope_id --body '{\"asset_name\":\"$primary\"}'"
+			echo "    • Without an asset name the platform rejects every deployment of the scope"
+		} >&2
+		return 1
+	fi
+	echo "   ✅ Asset name: $primary (the scope had none; set to its first platform)"
+}
+
+mobile_store_ensure_asset_name

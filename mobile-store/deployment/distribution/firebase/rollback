@@ -19,7 +19,7 @@
 # Inputs: PREVIOUS_DEPLOYMENT_ID, PREVIOUS_RELEASE_SEMVER, PLATFORMS, CHANNEL,
 # SIGNING_LAYER, FIREBASE_* (from the layer setup), RELEASE_SEMVER, DIMENSION,
 # APPLICATION_SLUG, DEPLOYMENT_ID, WORKDIR, and what resolve_release_asset
-# needs (CONTEXT, ASSET_TYPE).
+# needs (CONTEXT, ASSET_TYPE, ASSET_NAME).
 # =============================================================================
 
 set -euo pipefail
@@ -28,6 +28,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOYMENT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # shellcheck source=mobile-store/deployment/distribution/firebase/distribute
 source "$SCRIPT_DIR/distribute"
+# shellcheck source=mobile-store/deployment/scripts/asset_names
+source "$DEPLOYMENT_DIR/scripts/asset_names"
 
 firebase_remove_credentials_on_exit
 
@@ -85,13 +87,28 @@ echo "   📋 Firebase cannot unpublish release $RELEASE_SEMVER: the previous bu
 # The platform layers read ASSETS_JSON and write under WORKDIR: point both at
 # the previous release while keeping distribution.json in the deployment's dir.
 DISTRIBUTION_WORKDIR="$WORKDIR"
+first_platform="${PLATFORMS%% *}"
+if [ -z "${ASSET_NAME:-}" ]; then
+	resolve_scope_asset_name "$first_platform" || exit 1
+	ASSET_NAME="$RESOLVED_ASSET_NAME"
+fi
+export ASSET_NAME
+# Derive every name first: a 'both' scope whose name cannot be derived fails
+# before anything is downloaded.
+names='{}'
+for platform in $PLATFORMS; do
+	name=$(platform_asset_name "$ASSET_NAME" "$first_platform" "$platform") || exit 1
+	names=$(echo "$names" | jq -c --arg platform "$platform" --arg name "$name" '.[$platform] = $name')
+done
 previous_assets='{}'
 for platform in $PLATFORMS; do
+	name=$(echo "$names" | jq -r --arg platform "$platform" '.[$platform]')
 	if ! url=$("$DEPLOYMENT_DIR/scripts/resolve_release_asset" "$PREVIOUS_RELEASE_SEMVER" "$platform"); then
 		exit 1
 	fi
-	echo "   ✅ $platform: $platform-$DIMENSION of release $PREVIOUS_RELEASE_SEMVER -> $url"
-	previous_assets=$(echo "$previous_assets" | jq -c --arg platform "$platform" --arg url "$url" '.[$platform] = {url: $url}')
+	echo "   ✅ $platform: $name of release $PREVIOUS_RELEASE_SEMVER -> $url"
+	previous_assets=$(echo "$previous_assets" | jq -c --arg platform "$platform" --arg url "$url" --arg name "$name" \
+		'.[$platform] = {url: $url, name: $name}')
 done
 
 export ASSETS_JSON="$previous_assets"

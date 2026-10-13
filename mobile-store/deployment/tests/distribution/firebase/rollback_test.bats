@@ -78,6 +78,30 @@ teardown() {
 	}' "distribution.json"
 }
 
+@test "Should resolve the previous binary with the scope's asset name, not the dimension" {
+	export ASSET_NAME="android-prod"
+	jq '.results += [{id: 50, build_id: 442353600, name: "android-prod", type: "bundle",
+		url: "s3://assets-aws-mobile/mobile/442353687/442353600/prod/app-release.apk", metadata: {}}]' \
+		"$MOCKS_DIR/asset_list_previous.json" > "$TEST_TMP_DIR/assets_with_prod.json"
+	export NP_MOCK_ASSET_LIST="$TEST_TMP_DIR/assets_with_prod.json"
+
+	run bash "$SCRIPT"
+
+	assert_equal "$status" "0"
+	assert_line "   ✅ android: android-prod of release 0.9.0 -> s3://assets-aws-mobile/mobile/442353687/442353600/prod/app-release.apk"
+}
+
+@test "Should fail before resolving the previous release when the ios asset name cannot be derived" {
+	export PLATFORMS="android ios"
+	export ASSET_NAME="mobile-prod"
+
+	run bash "$SCRIPT"
+
+	assert_equal "$status" "1"
+	assert_line "   ❌ Cannot derive the ios asset name from the scope's asset name 'mobile-prod'"
+	[ ! -f "$FIREBASE_MOCK_LOG" ]
+}
+
 @test "Should fail with the full troubleshooting block when the previous release has no binary for the platform" {
 	jq '.results |= map(select(.name != "android-uat"))' "$MOCKS_DIR/asset_list_previous.json" > "$TEST_TMP_DIR/assets_without_android.json"
 	export NP_MOCK_ASSET_LIST="$TEST_TMP_DIR/assets_without_android.json"
@@ -87,8 +111,8 @@ teardown() {
 	assert_equal "$status" "1"
 	assert_line "   ❌ No asset named 'android-uat' of type 'bundle' in release 0.9.0"
 	assert_line "  💡 Possible causes:"
-	assert_line "    • The CI of release 0.9.0 did not build a binary for the 'uat' environment"
-	assert_line "    • The asset was registered with another name"
+	assert_line "    • The CI of release 0.9.0 did not register an asset named 'android-uat'"
+	assert_line "    • The scope's asset name changed after release 0.9.0 was built"
 	assert_line "  🔧 How to fix:"
 	assert_line "    • Roll back by deploying another release that carries an 'android-uat' asset"
 	[ ! -f "$FIREBASE_MOCK_LOG" ]

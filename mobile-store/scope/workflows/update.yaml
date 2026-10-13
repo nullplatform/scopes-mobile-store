@@ -1,5 +1,6 @@
 # update-scope: check that the scope configuration resolves and names layer
-# implementations that exist, before any deployment needs them.
+# implementations that exist, before any deployment needs them, and that the
+# scope has the asset_name the platform needs to deploy it.
 include:
   - "$SERVICE_PATH/values.yaml"
 steps:
@@ -33,6 +34,9 @@ steps:
         type: environment
       - name: SCOPE_CONFIGURATION
         type: environment
+  - name: ensure asset name
+    type: script
+    file: "$SERVICE_PATH/deployment/scripts/ensure_asset_name"
   - name: check signing layer
     type: script
     file: "$SERVICE_PATH/deployment/scripts/layer_executor"

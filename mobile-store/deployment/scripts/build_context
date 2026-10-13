@@ -42,7 +42,12 @@
 #   ASSETS_BUCKET, ASSETS_REGION
 #   SCOPE_CONFIGURATION  the whole 'Mobile store' scope configuration (JSON)
 #   ASSET_TYPE           type of the binaries this scope deploys (.asset.type)
-#   ASSETS_JSON          {"<platform>": {url, asset_id, build_id}}
+#   ASSET_NAME           the scope's asset_name (.scope.asset_name, else
+#                        np scope read, else the first platform): the asset of
+#                        the first platform; the other platform of a 'both'
+#                        scope swaps the prefix (see scripts/asset_names).
+#                        Empty in scope mode.
+#   ASSETS_JSON          {"<platform>": {url, asset_id, build_id, name}}
 #   ASSET_URL            url of the first platform, for convenience
 #   ASSET_VERSION        = RELEASE_SEMVER (asset metadata is not persisted)
 #   ASSET_BUILD_NUMBER   = .asset.build_id (unique, increasing build id)
@@ -62,6 +67,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=mobile-store/deployment/scripts/get_config_value
 source "$SCRIPT_DIR/get_config_value"
+# shellcheck source=mobile-store/deployment/scripts/asset_names
+source "$SCRIPT_DIR/asset_names"
 
 if [ -z "${CONTEXT:-}" ] || ! echo "$CONTEXT" | jq -e . >/dev/null 2>&1; then
 	{
@@ -119,7 +126,7 @@ DEPLOYMENT_ID=$(ctx '.deployment.id // empty')
 RELEASE_SEMVER=$(ctx '.release.semver // empty')
 DIMENSION=$(ctx '.scope.dimensions.environment // "default"')
 
-# These values end up in paths (WORKDIR), asset names and np commands: fail
+# These values end up in paths (WORKDIR), release notes and np commands: fail
 # early when they do not have the shape the platform produces.
 fail_invalid_context_value() {
 	local label="$1" value="$2" rule="$3"
@@ -212,6 +219,28 @@ if ! [[ "$ROLLOUT_PERCENTAGE" =~ ^[0-9]+$ ]] || [ "$ROLLOUT_PERCENTAGE" -lt 1 ] 
 fi
 
 echo "   📋 Platforms: $PLATFORMS | Channel: $CHANNEL | Rollout: $ROLLOUT_PERCENTAGE%"
+
+# =============================================================================
+# Asset name: the scope's asset_name decides which asset of the release each
+# platform deploys. Every platform's name is derived up front so a 'both'
+# scope with a name that cannot be derived fails before anything else.
+# =============================================================================
+ASSET_NAME=""
+asset_names='{}'
+if [ "$BUILD_CONTEXT_MODE" != "scope" ]; then
+	first_platform="${PLATFORMS%% *}"
+	resolve_scope_asset_name "$first_platform" || exit 1
+	ASSET_NAME="$RESOLVED_ASSET_NAME"
+	for platform in $PLATFORMS; do
+		platform_name=$(platform_asset_name "$ASSET_NAME" "$first_platform" "$platform") || exit 1
+		asset_names=$(echo "$asset_names" | jq -c --arg platform "$platform" --arg name "$platform_name" '.[$platform] = $name')
+	done
+	if [ "$RESOLVED_ASSET_NAME_SOURCE" = "default" ]; then
+		echo "   📋 Asset name: $ASSET_NAME (default: the scope has no asset name)"
+	else
+		echo "   📋 Asset name: $ASSET_NAME (from the scope)"
+	fi
+fi
 
 # =============================================================================
 # Scope configuration: platform lookup > context > environment variables
@@ -363,11 +392,12 @@ if [ "$BUILD_CONTEXT_MODE" != "deployment" ]; then
 	echo "   📋 Assets of the current release: skipped ($BUILD_CONTEXT_MODE mode)"
 else
 	# =============================================================================
-	# Build assets: one binary per platform, named <platform>-<dimension>
+	# Build assets: one binary per platform, named after the scope's asset_name
 	#
-	# The context carries the asset the platform matched to the scope's asset_type;
+	# The context carries the asset the platform matched to the scope's asset_name;
 	# its type is the type every binary of this build must have. When its name is
-	# not the one this platform/dimension needs, look the right one up in the build.
+	# not the one a platform needs (the other platform of a 'both' scope), look the
+	# right one up in the build.
 	# =============================================================================
 	build_id=$(ctx '.asset.build_id // .release.build_id // empty')
 	context_asset=$(ctx -c '.asset // {}')
@@ -394,7 +424,7 @@ else
 	listed_assets=""
 	ASSETS_JSON='{}'
 	for platform in $PLATFORMS; do
-		expected_name="$platform-$DIMENSION"
+		expected_name=$(echo "$asset_names" | jq -r --arg platform "$platform" '.[$platform]')
 		asset=$(echo "$context_asset" | jq -c --arg name "$expected_name" --arg type "$ASSET_TYPE" \
 			'select(.name == $name and .type == $type) // empty')
 
@@ -413,10 +443,10 @@ else
 			{
 				echo "   ❌ No asset named '$expected_name' of type '$ASSET_TYPE' in release $RELEASE_SEMVER"
 				echo "  💡 Possible causes:"
-				echo "    • The CI did not build a binary for the '$DIMENSION' environment"
-				echo "    • The asset was registered with another name"
+				echo "    • The CI did not register an asset named '$expected_name' for this build"
+				echo "    • The scope's asset name does not match the name the CI registers"
 				echo "  🔧 How to fix:"
-				echo "    • Make the CI register an asset named '$expected_name' (type $ASSET_TYPE) for this build"
+				echo "    • Register an asset named '$expected_name' (type $ASSET_TYPE) in the CI, or change the scope's asset name"
 			} >&2
 			exit 1
 		fi
@@ -424,11 +454,10 @@ else
 		# The platform does not persist asset metadata (np asset list shows {}), so
 		# the version is the release semver and the build number the build id.
 		ASSETS_JSON=$(echo "$ASSETS_JSON" | jq -c --arg platform "$platform" --argjson asset "$asset" \
-			'.[$platform] = {url: $asset.url, asset_id: $asset.id, build_id: $asset.build_id}')
+			'.[$platform] = {url: $asset.url, asset_id: $asset.id, build_id: $asset.build_id, name: $asset.name}')
 		echo "   ✅ $platform: $expected_name -> $(echo "$asset" | jq -r '.url') (release $RELEASE_SEMVER, build $build_id)"
 	done
 
-	first_platform="${PLATFORMS%% *}"
 	ASSET_URL=$(echo "$ASSETS_JSON" | jq -r --arg platform "$first_platform" '.[$platform].url // empty')
 	ASSET_VERSION="$RELEASE_SEMVER"
 	ASSET_BUILD_NUMBER="$build_id"
@@ -495,6 +524,6 @@ export CONTEXT
 export DIMENSION PLATFORMS CHANNEL ROLLOUT_PERCENTAGE
 export RELEASE_SEMVER DEPLOYMENT_ID SCOPE_ID APPLICATION_SLUG NAMESPACE_SLUG SCOPE_SLUG
 export SIGNING_LAYER DISTRIBUTION_LAYER GATE_LAYER ASSETS_BUCKET ASSETS_REGION SCOPE_CONFIGURATION
-export ASSET_TYPE ASSETS_JSON ASSET_URL ASSET_VERSION ASSET_BUILD_NUMBER ANDROID_PACKAGE IOS_BUNDLE_ID
+export ASSET_TYPE ASSET_NAME ASSETS_JSON ASSET_URL ASSET_VERSION ASSET_BUILD_NUMBER ANDROID_PACKAGE IOS_BUNDLE_ID
 export PREVIOUS_DEPLOYMENT_ID PREVIOUS_RELEASE_SEMVER
 export WORKDIR_BASE WORKDIR

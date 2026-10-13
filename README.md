@@ -17,11 +17,12 @@ Design and work plan: `docs/superpowers/plans/` in `voltmx-poc` and the ledger i
 entrypoint              agent calls it; routes deployment actions to service/deployment, the rest to service/scope
 service/                scope, deployment and instance handlers (map an action to its workflow) and the shared runner
 mobile-store/
-  scope/workflows/      create, update (check the scope configuration and its layers), delete (no-op)
+  scope/workflows/      create, update (check the scope configuration and its layers, set the asset name), delete (no-op)
   deployment/workflows/ initial, blue_green, switch_traffic, finalize, rollback, delete
   instance/workflows/   list: answers instance:data with the releases of the distribution channel
   deployment/scripts/   build_context, run_platforms, layer_executor, do_publish, do_rollback,
-                        check_active_rollout, record_rollout_state, delete_deployment and shared helpers
+                        check_active_rollout, record_rollout_state, delete_deployment, ensure_asset_name
+                        and shared helpers (asset_names: which asset of a release each platform deploys)
   deployment/platform/  android, ios: download and validate the binary of the release
   deployment/signing/   prebuilt (CI-signed), keyvault (apksigner with a keystore from the secrets manager)
   deployment/distribution/ firebase: setup, publish, rollback (re-distributes the previous release), list_releases
@@ -48,6 +49,17 @@ A new action needs its `specs/actions/<slug>.json.tpl`, its slug in `available_a
 `instance:data` runs `instance/workflows/list.yaml` (`service/instance/entrypoint`): it lists the releases of the distribution channel and prints only JSON (its first step sends every log to stderr). Logs, metrics and parameters are not implemented: `log:read` and `metric:*` answer empty results, and `parameter:*` fails. To serve one, add `<slug>/<entity>/workflows/` and route it in `entrypoint` (see the `k8s` scope in [nullplatform/scopes](https://github.com/nullplatform/scopes)); their steps must print only JSON.
 
 The engine (`np service workflow exec`) sources every step of a workflow in one `bash -c`, joined by `&&`: what a step exports reaches the next steps, the first step that fails stops the workflow, and a step's `configuration` only applies to that step. `output:` is informative only (the engine ignores it): steps list what they export there, and `deployment/tests/workflows/` checks that every variable a step consumes is declared by an earlier one. `set -e` does not apply inside steps chained with `&&` (only in the last one), so the scripts check each failure and `return 1` explicitly. Keep step `configuration` values to one word (older CLIs splice them unquoted).
+
+## Asset names
+
+The scope's `asset_name` decides which asset of a release is deployed. nullplatform picks the asset with that name from the release (and passes it as `CONTEXT.asset`); the platform rejects a deployment of a scope without one, with a misleading 400. The CI registers one asset per binary and the scope points at the one it deploys:
+
+- The first platform of the scope (`android` for `android` and `both`, `ios` for `ios`) deploys exactly `asset_name`.
+- A scope with both platforms deploys, for iOS, the same name with the platform prefix swapped: `android-production` → `ios-production`, `android` → `ios`. Any other name (`mobile-prod`) cannot be derived and the deployment fails asking for `android` or `android-<suffix>`.
+- Names must match `^[a-z0-9][a-z0-9._-]*$`.
+- `create-scope` and `update-scope` set `asset_name` to the first platform (`android` or `ios`) when the scope has none, which is what scopes created through the API get, and validate it when it is set. `np scope patch --id <scope id> --body '{"asset_name":"android-production"}'` changes it.
+
+The environment (dimension) is not part of the name unless you put it there: by default every scope deploys the same `android` / `ios` binary, and the dimension only selects the scope configuration (signing, distribution channel). Name the assets after the environment (`android-uat`, `android-production`) and set each scope's `asset_name` accordingly only when the binary differs per environment because configuration is embedded at build time, as with Volt MX Iris, where the CI builds one binary per environment. The rollback resolves the previous release's binary with the same rule (`deployment/scripts/asset_names`).
 
 ## Register the scope
 

@@ -10,7 +10,7 @@
 # the path. Returns 1 with the troubleshooting block on any failure; the
 # caller (a sourced setup) must `return 1`, never exit.
 #
-# Inputs: PLATFORMS, ASSETS_JSON, ASSETS_REGION, DIMENSION, WORKDIR.
+# Inputs: PLATFORMS, ASSETS_JSON, ASSETS_REGION, WORKDIR.
 # =============================================================================
 
 # shellcheck source=mobile-store/deployment/scripts/validators
@@ -18,7 +18,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/validators"
 
 prepare_platform_binary() {
 	local platform="$1" extension="$2" description="$3" entry_regex="$4" ci_hint="$5"
-	local scripts_dir url bucket destination extension_upper listing
+	local scripts_dir url asset_label bucket destination extension_upper listing
 
 	scripts_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -43,6 +43,8 @@ prepare_platform_binary() {
 		} >&2
 		return 1
 	fi
+
+	asset_label=$(echo "$ASSETS_JSON" | jq -r --arg platform "$platform" '.[$platform].name // $platform' 2>/dev/null || true)
 
 	case "$url" in
 		s3://* | https://*) ;;
@@ -84,9 +86,9 @@ prepare_platform_binary() {
 			echo "   ❌ $destination is not ${description%%:*}: the file is not a zip archive"
 			echo "  💡 Possible causes:"
 			echo "    • The download was truncated"
-			echo "    • The CI registered a file that is not an $extension_upper as the '$platform-${DIMENSION:-default}' asset"
+			echo "    • The CI registered a file that is not an $extension_upper as the '$asset_label' asset"
 			echo "  🔧 How to fix:"
-			echo "    • Make the CI upload the $extension_upper produced by $ci_hint as the '$platform-${DIMENSION:-default}' asset"
+			echo "    • Make the CI upload the $extension_upper produced by $ci_hint as the '$asset_label' asset"
 		} >&2
 		return 1
 	fi
@@ -94,10 +96,10 @@ prepare_platform_binary() {
 		{
 			echo "   ❌ $destination is not $description inside the archive"
 			echo "  💡 Possible causes:"
-			echo "    • The CI registered a file that is not an $extension_upper as the '$platform-${DIMENSION:-default}' asset"
+			echo "    • The CI registered a file that is not an $extension_upper as the '$asset_label' asset"
 			echo "    • The download was truncated"
 			echo "  🔧 How to fix:"
-			echo "    • Make the CI upload the $extension_upper produced by $ci_hint as the '$platform-${DIMENSION:-default}' asset"
+			echo "    • Make the CI upload the $extension_upper produced by $ci_hint as the '$asset_label' asset"
 		} >&2
 		return 1
 	fi

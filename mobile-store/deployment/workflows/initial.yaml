@@ -62,6 +62,8 @@ steps:
         type: environment
       - name: ASSET_TYPE
         type: environment
+      - name: ASSET_NAME
+        type: environment
       - name: ASSETS_JSON
         type: environment
       - name: ASSET_URL
