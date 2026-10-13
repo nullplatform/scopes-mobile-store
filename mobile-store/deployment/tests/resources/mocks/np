@@ -12,6 +12,8 @@
 #   NP_MOCK_ASSET_LIST                    np asset list
 #   NP_MOCK_DEPLOYMENT_LIST               np deployment list
 #   NP_MOCK_RELEASE_READ                  np release read
+#   NP_MOCK_RELEASE_LIST                  np release list
+#   NP_MOCK_DEPLOYMENT_PATCH              np deployment patch
 #
 # A subcommand without a file configured behaves like the real CLI on an
 # error: prints {"error": ...} on stdout and exits 1. NP_MOCK_EXIT_CODE
@@ -68,7 +70,9 @@ case "$*" in
     done
     answer "${NP_MOCK_DEPLOYMENT_LIST:-}"
     ;;
+  *"deployment patch"*) answer "${NP_MOCK_DEPLOYMENT_PATCH:-}" ;;
   *"release read"*) answer "${NP_MOCK_RELEASE_READ:-}" ;;
+  *"release list"*) answer "${NP_MOCK_RELEASE_LIST:-}" ;;
   *)
     echo "{\"error\": \"unexpected command: np $*\"}"
     exit 1

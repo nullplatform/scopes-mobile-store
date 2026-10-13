@@ -1,0 +1,24 @@
+{
+  "results": [
+    {
+      "id": 5,
+      "build_id": 442353600,
+      "name": "android-uat",
+      "type": "bundle",
+      "url": "s3://assets-aws-mobile/mobile/442353687/442353600/uat/app-release.apk",
+      "platform": "",
+      "metadata": {},
+      "nrn": "organization=1:account=2:namespace=3:application=442353687:build=442353600:asset=5"
+    },
+    {
+      "id": 11,
+      "build_id": 442353600,
+      "name": "ios-uat",
+      "type": "bundle",
+      "url": "s3://assets-aws-mobile/mobile/442353687/442353600/uat/app-release.ipa",
+      "platform": "",
+      "metadata": {},
+      "nrn": "organization=1:account=2:namespace=3:application=442353687:build=442353600:asset=11"
+    }
+  ]
+}

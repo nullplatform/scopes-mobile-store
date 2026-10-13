@@ -1,0 +1,72 @@
+#!/bin/bash
+# =============================================================================
+# Mock firebase CLI (firebase-tools) for the BATS tests.
+#
+#   firebase --version
+#   firebase appdistribution:distribute <binary> --app <id> ... --release-notes <text>
+#       Prints what the real CLI prints on a successful upload, including the
+#       console link whose last segment is the release id. The release id is
+#       FIREBASE_MOCK_RELEASE_ID (default 0abcdef). With
+#       FIREBASE_MOCK_OUTPUT=release-name the output carries the full
+#       projects/<n>/apps/<id>/releases/<id> resource name instead of the link,
+#       and with FIREBASE_MOCK_OUTPUT=bare neither.
+#       FIREBASE_MOCK_FAIL=permission  -> Error: HTTP Error: 403, PERMISSION_DENIED
+#       FIREBASE_MOCK_FAIL=notfound    -> Error: HTTP Error: 404, App not found
+#       FIREBASE_MOCK_FAIL=other       -> Error: HTTP Error: 500, Internal error
+#
+# When FIREBASE_MOCK_LOG is set every invocation is appended as "firebase <args>".
+# =============================================================================
+
+if [ -n "${FIREBASE_MOCK_LOG:-}" ]; then
+  echo "firebase $*" >> "$FIREBASE_MOCK_LOG"
+fi
+
+case "${1:-}" in
+  --version)
+    echo "14.2.0"
+    exit 0
+    ;;
+  appdistribution:distribute)
+    app_id=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --app) app_id="${2:-}"; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    case "${FIREBASE_MOCK_FAIL:-}" in
+      permission)
+        echo "i  uploading binary..."
+        echo "Error: HTTP Error: 403, PERMISSION_DENIED" >&2
+        exit 1
+        ;;
+      notfound)
+        echo "i  uploading binary..."
+        echo "Error: HTTP Error: 404, App not found" >&2
+        exit 1
+        ;;
+      other)
+        echo "i  uploading binary..."
+        echo "Error: HTTP Error: 500, Internal error" >&2
+        exit 1
+        ;;
+    esac
+    release_id="${FIREBASE_MOCK_RELEASE_ID:-0abcdef}"
+    project_number=$(echo "$app_id" | cut -d: -f2)
+    echo "i  uploading binary..."
+    echo "✔  uploaded new release 1.0.0 (10) successfully!"
+    echo "i  added release notes successfully"
+    echo "i  distributing to groups: internal"
+    echo "✔  distributed to groups: internal"
+    case "${FIREBASE_MOCK_OUTPUT:-console}" in
+      release-name) echo "i  release: projects/$project_number/apps/$app_id/releases/$release_id" ;;
+      bare) ;;
+      *) echo "i  View this release in the Firebase console: https://console.firebase.google.com/project/np-mobile-poc/appdistribution/app/$app_id/releases/$release_id" ;;
+    esac
+    exit 0
+    ;;
+  *)
+    echo "mock firebase: unexpected command: firebase $*" >&2
+    exit 1
+    ;;
+esac

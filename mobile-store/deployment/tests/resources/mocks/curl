@@ -1,0 +1,39 @@
+#!/bin/bash
+# =============================================================================
+# Mock curl for the BATS tests.
+#
+# Answers every request with the file named by CURL_MOCK_RESPONSE: printed on
+# stdout, or copied to the path given with -o. With CURL_MOCK_FAIL set it
+# fails like `curl -f` on an HTTP error (exit 22). The request URL and every
+# -d/--data value are appended to CURL_MOCK_CALLS_LOG as "curl <args>".
+# =============================================================================
+
+if [ -n "${CURL_MOCK_CALLS_LOG:-}" ]; then
+  echo "curl $*" >> "$CURL_MOCK_CALLS_LOG"
+fi
+
+output=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o) output="${2:-}"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+
+if [ -n "${CURL_MOCK_FAIL:-}" ]; then
+  echo "curl: (22) The requested URL returned error: ${CURL_MOCK_FAIL}" >&2
+  exit 22
+fi
+
+if [ -z "${CURL_MOCK_RESPONSE:-}" ] || [ ! -f "$CURL_MOCK_RESPONSE" ]; then
+  echo "curl: (22) The requested URL returned error: 404 (no CURL_MOCK_RESPONSE configured)" >&2
+  exit 22
+fi
+
+if [ -n "$output" ]; then
+  mkdir -p "$(dirname "$output")"
+  cp "$CURL_MOCK_RESPONSE" "$output"
+else
+  cat "$CURL_MOCK_RESPONSE"
+fi
+exit 0
