@@ -190,10 +190,10 @@ write_service_account() {
 	key=$(openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 2>/dev/null)
 	jq -n --arg key "$key" '{
 		type: "service_account",
-		project_id: "np-mobile-poc",
+		project_id: "np-mobile-pc",
 		private_key_id: "abc123",
 		private_key: ($key + "\n"),
-		client_email: "distributor@np-mobile-poc.iam.gserviceaccount.com",
+		client_email: "distributor@np-mobile-pc.iam.gserviceaccount.com",
 		token_uri: "https://oauth2.googleapis.com/token"
 	}' > "$target"
 }

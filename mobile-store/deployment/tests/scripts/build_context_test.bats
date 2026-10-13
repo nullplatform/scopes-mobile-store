@@ -364,7 +364,7 @@ with_context() {
 	run_build_context
 
 	assert_equal "$(echo "$SCOPE_CONFIGURATION" | jq -r .marker)" "application-level"
-	assert_equal "$(echo "$SCOPE_CONFIGURATION" | jq -r .firebase.project)" "np-mobile-poc"
+	assert_equal "$(echo "$SCOPE_CONFIGURATION" | jq -r .firebase.project)" "np-mobile-pc"
 	assert_equal "$(echo "$CONTEXT" | jq -r '.providers["scope-configurations"].marker')" "application-level"
 	assert_np_called "np provider list --nrn organization=1:account=2:namespace=3:application=442353687:scope=7 --categories scope-configurations --show-ascendants --dimensions environment:uat --format json"
 }

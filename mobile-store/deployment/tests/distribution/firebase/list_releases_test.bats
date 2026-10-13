@@ -18,7 +18,7 @@ setup() {
 	setup_layer_test "$DEPLOYMENT_DIR"
 	SCRIPT="$DEPLOYMENT_DIR/distribution/firebase/list_releases"
 
-	export FIREBASE_PROJECT="np-mobile-poc"
+	export FIREBASE_PROJECT="np-mobile-pc"
 	export FIREBASE_APP_ID_ANDROID="1:726762523137:android:a700b1fa49f91e41eb0e00"
 	export FIREBASE_ACCESS_TOKEN="ya29.injected-token"
 	export CURL_MOCK_RESPONSE="$MOCKS_DIR/firebase_api/releases_android.json"
@@ -42,7 +42,7 @@ teardown() {
 				"build": "10",
 				"created_at": "2025-12-22T18:30:00.000Z",
 				"release_notes": "sample 1.0.0 (uat) deployment 77",
-				"console_url": "https://console.firebase.google.com/project/np-mobile-poc/appdistribution/app/android:ar.io.nullplatform.sample/releases/0abcdef",
+				"console_url": "https://console.firebase.google.com/project/np-mobile-pc/appdistribution/app/android:ar.io.nullplatform.sample/releases/0abcdef",
 				"testing_url": "https://appdistribution.firebase.google.com/testerapps/1:726762523137:android:a700b1fa49f91e41eb0e00/releases/0abcdef"
 			},
 			{
@@ -53,7 +53,7 @@ teardown() {
 				"build": "9",
 				"created_at": "2025-12-15T09:05:00.000Z",
 				"release_notes": null,
-				"console_url": "https://console.firebase.google.com/project/np-mobile-poc/appdistribution/app/android:ar.io.nullplatform.sample/releases/0fedcba",
+				"console_url": "https://console.firebase.google.com/project/np-mobile-pc/appdistribution/app/android:ar.io.nullplatform.sample/releases/0fedcba",
 				"testing_url": "https://appdistribution.firebase.google.com/testerapps/1:726762523137:android:a700b1fa49f91e41eb0e00/releases/0fedcba"
 			}
 		]
@@ -81,7 +81,7 @@ teardown() {
 	assert_equal "$status" "1"
 	assert_line "   ❌ Could not list the releases of the android app 1:726762523137:android:a700b1fa49f91e41eb0e00"
 	assert_line "  💡 Possible causes:"
-	assert_line "    • The service account lacks the Firebase App Distribution Viewer role on project 'np-mobile-poc'"
+	assert_line "    • The service account lacks the Firebase App Distribution Viewer role on project 'np-mobile-pc'"
 	assert_line "    • The app id is wrong"
 	assert_line "  🔧 How to fix:"
 	assert_line "    • Check firebase.app_id_android and the roles of the service account in the Firebase console"
