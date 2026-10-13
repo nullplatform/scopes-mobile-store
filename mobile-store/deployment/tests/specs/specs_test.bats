@@ -35,7 +35,10 @@ render() {
 		[ "$status" -eq 0 ] || { echo "invalid JSON: $tpl"; echo "$output"; return 1; }
 		count=$((count + 1))
 	done
-	assert_equal "$count" "12"
+	local expected
+	expected=$(( $(find "$SPECS_DIR" -maxdepth 1 -name "*.json.tpl" | wc -l) + $(find "$SPECS_DIR/actions" -name "*.json.tpl" | wc -l) ))
+	assert_greater_than "$count" "0" "spec templates"
+	assert_equal "$count" "$expected"
 }
 
 @test "Service spec declares the Mobile store identity and every action it lists has a template" {
@@ -44,9 +47,19 @@ render() {
 	assert_equal "$(echo "$spec" | jq -r .name)" "Mobile store"
 	assert_equal "$(echo "$spec" | jq -r .selectors.sub_category)" "Mobile store"
 	assert_equal "$(echo "$spec" | jq -r .type)" "scope"
+	assert_greater_than "$(echo "$spec" | jq '.available_actions | length')" "0" "available_actions"
 	for action in $(echo "$spec" | jq -r '.available_actions[]'); do
 		assert_file_exists "$SPECS_DIR/actions/$action.json.tpl"
 		assert_equal "$(render "$SPECS_DIR/actions/$action.json.tpl" | jq -r .slug)" "$action"
+	done
+}
+
+@test "Every action template is listed in available_actions (no orphan templates)" {
+	local spec tpl slug
+	spec=$(render "$SPECS_DIR/service-spec.json.tpl")
+	for tpl in "$SPECS_DIR"/actions/*.json.tpl; do
+		slug=$(basename "$tpl" .json.tpl)
+		assert_equal "$(echo "$spec" | jq -r --arg s "$slug" '.available_actions | index($s) != null')" "true"
 	done
 }
 

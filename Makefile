@@ -1,4 +1,4 @@
-.PHONY: test test-all test-unit test-tofu test-integration help
+.PHONY: test test-all test-unit test-tofu test-integration lint help
 
 # Default test target - shows available options
 test:
@@ -48,10 +48,12 @@ help:
 	@echo "  test-unit         Run BATS unit tests"
 	@echo "  test-tofu         Run OpenTofu tests"
 	@echo "  test-integration  Run integration tests"
+	@echo "  lint              Run shellcheck on the scope scripts"
 	@echo ""
 	@echo "Options:"
 	@echo "  MODULE=<name>     Run tests for specific module (e.g., MODULE=mobile-store)"
 	@echo "  VERBOSE=1         Show output of passing tests (integration tests only)"
+
 # Shellcheck every bash script of the scope (extensionless scripts and *.sh)
 lint:
 	@find mobile-store service entrypoint -type f \( -name "*.sh" -o ! -name "*.*" \) -exec grep -l '^#!/' {} + | xargs shellcheck -S warning
