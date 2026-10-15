@@ -2,8 +2,6 @@
 
 nullplatform scope that publishes mobile app binaries (Android, iOS) to a distribution channel: tester groups (Firebase App Distribution), public stores (App Store, Google Play) or an enterprise store. Generic by design: the binary comes from the application's CI as an asset; the scope signs it if asked, publishes it to the channel of the dimension and tracks the rollout. Built on the `scopes-*` template; the sections below are the template's operating notes.
 
-Design and work plan: `docs/superpowers/plans/` in `voltmx-poc` and the ledger in `docs/superpowers/ledger.md`.
-
 ## Start here
 
 1. Done: the module is `mobile-store/` and the display name is "Mobile store".
