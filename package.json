@@ -1,0 +1,24 @@
+{
+  "name": "mobile-store",
+  "version": "0.5.0",
+  "description": "Publish mobile app binaries (Android, iOS) to a distribution channel: tester groups, app stores or an enterprise store",
+  "private": true,
+  "type": "module",
+  "main": "src/main.ts",
+  "scripts": {
+    "describe": "bun src/main.ts --describe",
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit -p .",
+    "build": "bun build --compile src/main.ts --outfile dist/mobile-store"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.700.0",
+    "@aws-sdk/client-secrets-manager": "^3.700.0",
+    "@aws-sdk/client-sts": "^3.700.0",
+    "@nullplatform/plugin": "0.1.9",
+    "@nullplatform/tracing": "0.0.16"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0"
+  }
+}

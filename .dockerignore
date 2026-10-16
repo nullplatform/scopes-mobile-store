@@ -1,11 +1,7 @@
-# Only what the agent runs goes into the image.
+# Only what the build needs goes into the image.
 .git
 .github
-Dockerfile
+node_modules
+dist
+requirements
 *.md
-**/.terraform
-**/*.tfstate*
-mise.toml
-**/tests
-testing
-docs
