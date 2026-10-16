@@ -1,9 +1,0 @@
-# delete-deployment, also for failed deployments: Firebase App Distribution
-# cannot unpublish, so only the scratch directory of the deployment is removed.
-# No build context: a deployment that failed there must still be deletable.
-include:
-  - "$SERVICE_PATH/values.yaml"
-steps:
-  - name: delete deployment
-    type: script
-    file: "$SERVICE_PATH/deployment/scripts/delete_deployment"

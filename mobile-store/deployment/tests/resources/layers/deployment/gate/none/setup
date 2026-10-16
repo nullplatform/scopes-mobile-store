@@ -1,4 +1,0 @@
-#!/bin/bash
-# Trivial gate/none layer used only by layer_executor tests; the real layers live in deployment/.
-echo "setup executed for gate/none"
-exit 0

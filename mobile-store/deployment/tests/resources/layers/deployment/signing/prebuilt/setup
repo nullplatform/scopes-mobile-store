@@ -1,4 +1,0 @@
-#!/bin/bash
-# Trivial signing/prebuilt layer used only by layer_executor tests; the real layers live in deployment/.
-echo "setup executed for signing/prebuilt"
-exit 0
