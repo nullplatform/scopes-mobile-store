@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.2](https://github.com/nullplatform/scopes-mobile-store/compare/v0.5.1...v0.5.2) (2026-10-26)
+
+
+### Bug Fixes
+
+* **deps:** bump nullplatform/scopes/worker-bridge from 2.0.3 to 2.0.6 ([15b35e8](https://github.com/nullplatform/scopes-mobile-store/commit/15b35e864e5ef70115a8e11d6af63245ea065b84))
+* **deps:** bump nullplatform/scopes/worker-bridge from 2.0.3 to 2.0.6 ([5564419](https://github.com/nullplatform/scopes-mobile-store/commit/556441916b52b2c34dc509189eca9602ce43f17b))
+
 ## [0.5.1](https://github.com/nullplatform/scopes-mobile-store/compare/v0.5.0...v0.5.1) (2026-10-16)
 
 
