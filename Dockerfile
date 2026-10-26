@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Worker image: the bridge runs the root entrypoint on every action. Add the tools your steps need.
-FROM public.ecr.aws/nullplatform/scopes/worker-bridge:2.0.3
+FROM public.ecr.aws/nullplatform/scopes/worker-bridge:2.0.6
 
 # Exact firebase-tools version (reproducible builds); keep in sync with
 # FIREBASE_CLI_VERSION in mobile-store/values.yaml.
