@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/nullplatform/scopes-mobile-store/compare/v0.5.3...v0.6.0) (2026-11-23)
+
+
+### Features
+
+* **package:** publish the scope as a global package ([ca27fc6](https://github.com/nullplatform/scopes-mobile-store/commit/ca27fc6ef92d3d85267225f9dd8a35f04ac8f41d))
+* **package:** publish the scope as a global package ([4321181](https://github.com/nullplatform/scopes-mobile-store/commit/4321181e33f0ee5a0be05efa1aa1cf2aa8aeced7))
+
 ## [0.5.3](https://github.com/nullplatform/scopes-mobile-store/compare/v0.5.2...v0.5.3) (2026-11-02)
 
 
